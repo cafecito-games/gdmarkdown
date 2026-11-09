@@ -1,0 +1,38 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Run the full verification gate
+    deps: [lint, test]
+
+  lint:
+    desc: Check GDScript formatting, lint rules, and uid:// sidecars with gdkit
+    cmds:
+      - gdkit format check .
+      - gdkit lint check .
+      - gdkit uid check .
+
+  format:
+    desc: Rewrite GDScript sources in gdkit's canonical format
+    cmds:
+      - gdkit format write .
+
+  uid:
+    desc: Write missing uid:// sidecars
+    cmds:
+      - gdkit uid write .
+
+  install:
+    desc: Install pinned addons, including the gdtest runner
+    cmds:
+      - gpm install
+
+  test:
+    desc: Run the gdtest suite
+    cmds:
+      - ./addons/gdtest/gdtest run
+
+  package:
+    desc: Cut a gpm release archive into dist/
+    cmds:
+      - ./scripts/package-addon

@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Cuts a gpm release archive for the gdmarkdown addon.
+#
+# Packages from a staged copy of addons/gdmarkdown rather than from the working
+# tree, so nothing that is not part of the shipped addon can reach the core
+# slice. The version comes from plugin.cfg.
+set -euo pipefail
+
+readonly MINIMUM_GPM_VERSION="0.6.0"
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+output_directory="${1:-${repository_root}/dist}"
+
+if ! command -v gpm >/dev/null 2>&1; then
+	echo "gpm is not installed: brew install cafecito-games/tap/gpm" >&2
+	exit 1
+fi
+
+installed_version="$(gpm --version | awk '{print $3}')"
+if [[ "$(printf '%s\n%s\n' "${MINIMUM_GPM_VERSION}" "${installed_version}" | sort -V | head -n1)" != "${MINIMUM_GPM_VERSION}" ]]; then
+	echo "gpm ${MINIMUM_GPM_VERSION} or newer is required, found ${installed_version}" >&2
+	exit 1
+fi
+
+version="$(sed -n 's/^version="\(.*\)"$/\1/p' "${repository_root}/addons/gdmarkdown/plugin.cfg")"
+if [[ -z "${version}" ]]; then
+	echo "could not read version from addons/gdmarkdown/plugin.cfg" >&2
+	exit 1
+fi
+
+staging_directory="$(mktemp -d)"
+trap 'rm -rf "${staging_directory}"' EXIT
+
+mkdir -p "${staging_directory}/addons"
+cp -R "${repository_root}/addons/gdmarkdown" "${staging_directory}/addons/gdmarkdown"
+cp "${repository_root}/packaging/gpm-package.toml" "${staging_directory}/gpm-package.toml"
+
+gpm package --dir "${staging_directory}" --out "${output_directory}" --version "${version}"
+
+echo "Packaged gdmarkdown ${version} into ${output_directory}"

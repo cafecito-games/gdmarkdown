@@ -1,0 +1,8 @@
+[project]
+
+[addons]
+  [addons.gdtest]
+    source = "github-release"
+    repo = "cafecito-games/gdtest"
+    version = "v0.4.1"
+    platforms = []

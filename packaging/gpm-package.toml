@@ -1,0 +1,17 @@
+# gpm slice packaging manifest.
+#
+# This file is deliberately not at the repository root. gpm has no exclusion
+# mechanism: every file under addon_path that no .gdextension key claims lands in
+# the core slice. Keeping the manifest out of the root makes a bare
+# `gpm package` fail loudly instead of publishing an unintended tree, and
+# scripts/package-addon stages the shippable files before packaging them.
+#
+# gdmarkdown is pure GDScript, so it publishes a single mandatory core slice and
+# no platform slices.
+
+[package]
+name       = "gdmarkdown"
+addon_path = "addons/gdmarkdown"
+# Always overridden by scripts/package-addon with the version in plugin.cfg,
+# which is the single source of truth.
+version    = "0.0.0"

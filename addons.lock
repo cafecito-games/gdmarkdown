@@ -1,0 +1,12 @@
+[addons]
+  [addons.gdtest]
+    resolved_version = "v0.4.1"
+    source_path = ""
+    spec_hash = "74165e855f51baa2f528115a6a886339a27ce621ff9159f0aad58a07c4140127"
+    index_sha256 = "a7c4d01b55b00d08a3efea81b33dbccaadde47a83bae402124f0b8eb4957126f"
+    [addons.gdtest.slices]
+      core = "11fb9ea30ffa50931565f2d4bda4b6b69eff183294ed29e6108f08792f059735"
+      "linux.arm64" = "439be728292561c348c6d5ada5da732e44b64e8ac0cdfbf8025b84f332fadfd0"
+      "linux.x86_64" = "6ac5254de06a99ce45c0e3ddefb47e35f47c8efc458a404c6c1cb3ac06d183c0"
+      "macos.arm64" = "da4a77e550eb722a8935a915fde764d9313dcb7c5e6dee28a95c4a43c2f19100"
+      "macos.x86_64" = "0c1aee94a6b199994584c26dd9b7229592dce1051b97fdd7f3f80f4a138035cd"

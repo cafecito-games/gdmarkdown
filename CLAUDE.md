@@ -1,0 +1,32 @@
+# gdmarkdown
+
+Pure-GDScript Godot 4.7 addon that renders Markdown into a `RichTextLabel`.
+Read `docs/architecture.md` before changing the pipeline.
+
+## Verification gate
+
+Both must pass before any change is complete:
+
+```sh
+gdkit format check . && gdkit lint check . && gdkit uid check .
+./addons/gdtest/gdtest run
+```
+
+`task` runs both. `gdkit format write .` fixes formatting; run it on a clean
+tree.
+
+## Constraints that bite
+
+- Every GDScript warning is an error, including `inferred_declaration`, so
+  `:=` does not compile here. Declare every type.
+- `return_value_discarded` is an error. `PackedStringArray.append()` returns
+  `bool` and `Signal.connect()` returns `int`. Accumulate into `Array[String]`
+  and join with `MarkdownScanner.join()`.
+- `tests/fixtures/kitchen_sink.bbcode` is a reviewed golden file. If a change
+  moves it, read the diff and confirm the new output is correct before
+  committing it.
+- `addons/gdtest/` is installed by `gpm install` and is not committed. Never
+  edit it, and never hand-edit `addons.lock`.
+- The release manifest lives at `packaging/gpm-package.toml`, deliberately not
+  at the repository root. Cut releases with `./scripts/package-addon`, which
+  reads the version from `plugin.cfg`.

@@ -1,0 +1,5 @@
+.godot/
+.gpm-state.toml
+addons/gdtest/
+dist/
+*.translation
