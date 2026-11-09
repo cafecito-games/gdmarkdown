@@ -39,3 +39,7 @@ tree.
 - Write changelog entries under `## [Unreleased]` as you go.
   `scripts/release-notes-present` fails a release when that section is empty,
   and the section becomes the GitHub release body.
+- `main` is protected: pull requests required, `verify` must pass, no force
+  pushes or deletions. Never push to `main` directly. The release workflow
+  commits its bump to an ephemeral `release/vX.Y.Z` branch and opens an
+  auto-merging pull request; see `docs/releasing.md`.

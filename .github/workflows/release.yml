@@ -104,13 +104,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     env:
       RELEASE_TAG: ${{ needs.quality.outputs.tag }}
       RELEASE_VERSION: ${{ needs.quality.outputs.version }}
+      RELEASE_BRANCH: release/${{ needs.quality.outputs.tag }}
     steps:
+      # A GitHub App token rather than GITHUB_TOKEN, because a pull request
+      # opened with GITHUB_TOKEN does not trigger workflows, and auto-merge
+      # would then wait forever for required checks that never start.
+      - name: Generate a token for the release bot
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.CAFECITO_CI_BOT_APP_ID }}
+          private-key: ${{ secrets.CAFECITO_CI_BOT_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: actions/setup-go@v5
         with:
@@ -118,6 +131,19 @@ jobs:
 
       - name: Install pinned gpm
         run: go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+
+      - name: Confirm main has not advanced
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          if [[ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]]; then
+            echo "::error::main advanced after this release started; rerun from the new head"
+            exit 1
+          fi
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $RELEASE_TAG already exists"
+            exit 1
+          fi
 
       - name: Inject the version into plugin.cfg and the changelog
         run: scripts/set-version "$RELEASE_VERSION"
@@ -148,32 +174,43 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-      - name: Commit the version bump to main
+      # The bump is committed to an ephemeral branch rather than to main, so
+      # main keeps its protection with no bypass actor. The tag points at that
+      # commit, so the release source archive already carries the bumped
+      # plugin.cfg before the pull request merges.
+      - name: Create the release branch and tag
         run: |
           set -euo pipefail
-          git fetch origin main --tags
-          if [[ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]]; then
-            echo "::error::main advanced after this release started; rerun from the new head"
-            exit 1
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "cafecito-ci-bot[bot]"
+          git config user.email "cafecito-ci-bot[bot]@users.noreply.github.com"
+          git checkout -b "$RELEASE_BRANCH"
           git add CHANGELOG.md addons/gdmarkdown/plugin.cfg
-          git commit -m "Release ${RELEASE_TAG}"
-          git push origin "HEAD:main"
-          echo "RELEASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          git commit -m "Release $RELEASE_TAG"
+          git tag "$RELEASE_TAG"
+          # The release branch is ephemeral and version-specific; force-push so
+          # a rerun after a partial failure is not blocked by a stale remote.
+          git push --force origin "$RELEASE_BRANCH"
+          git push origin "$RELEASE_TAG"
 
       - name: Publish one atomic release asset set
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
-          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $RELEASE_TAG already exists"
-            exit 1
-          fi
           gh release create "$RELEASE_TAG" dist/* \
-            --target "$RELEASE_SHA" \
             --title "$RELEASE_TAG" \
             --notes-file "$RUNNER_TEMP/notes.md"
           echo "Published $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open an auto-merging pull request to sync main
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh pr create \
+            --base main \
+            --head "$RELEASE_BRANCH" \
+            --title "Release $RELEASE_TAG" \
+            --body "Version bump and changelog for the $RELEASE_TAG release, published from this branch."
+          gh pr merge "$RELEASE_BRANCH" --auto --squash --delete-branch
+          echo "Opened the sync pull request for $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

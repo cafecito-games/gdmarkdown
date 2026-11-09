@@ -20,24 +20,42 @@ published.
 
 **`publish`** performs the release.
 
-1. `scripts/set-version` injects the version into
+1. Refuses if `main` advanced since the run started, or if the tag now exists.
+2. `scripts/set-version` injects the version into
    `addons/gdmarkdown/plugin.cfg` and rolls `## [Unreleased]` into a dated
    section for it.
-2. Confirms those are the only two files that changed.
-3. `scripts/package-addon --version` cuts the archive from a staged tree with
+3. Confirms those are the only two files that changed.
+4. `scripts/package-addon --version` cuts the archive from a staged tree with
    the version injected, and `scripts/verify-package` checks the cut: the index
    declares this version and exactly one `core` slice, the packaged
    `plugin.cfg` carries the version, no repository file outside the addon
    reached the slice, and two cuts are byte-identical.
-4. Uploads `dist/*` as a workflow artifact.
-5. Commits the bump to `main`, refusing if `main` advanced since the run
-   started.
-6. Creates the tag and the GitHub release at that commit, with the changelog
-   section as the body and `gdmarkdown-<version>-core.zip` plus
-   `gpm-index.toml` as assets.
+5. Uploads `dist/*` as a workflow artifact.
+6. Commits the bump to an ephemeral `release/vX.Y.Z` branch and tags **that**
+   commit, so the release source archive already carries the bumped
+   `plugin.cfg`.
+7. Creates the GitHub release, with the changelog section as the body and
+   `gdmarkdown-<version>-core.zip` plus `gpm-index.toml` as assets.
+8. Opens a pull request from the release branch to `main` and enables
+   auto-merge, so the bump lands on `main` once the required checks pass.
 
 The order matters: everything that can fail does so **before** anything is
-pushed. A failed build leaves no commit, no tag, and no release.
+pushed. A failed build leaves no branch, no tag, and no release.
+
+## Why the bump never lands on main directly
+
+`main` is protected: pull requests are required, and no bypass actor is
+configured. Rather than weakening that so a workflow can push, the bump is
+committed to a short-lived `release/vX.Y.Z` branch, which is what the tag and
+the release point at, and a pull request brings it back. The same pattern is
+used by `cafecito-games/AuthenticationKit`.
+
+The workflow authenticates as the **cafecito-ci-bot** GitHub App rather than
+with `GITHUB_TOKEN`. A pull request opened with `GITHUB_TOKEN` does not trigger
+workflows, so its required checks would never start and auto-merge would wait
+forever. The app is installed across the organization and
+`CAFECITO_CI_BOT_APP_ID` and `CAFECITO_CI_BOT_PRIVATE_KEY` are organization
+secrets visible to every repository, so nothing needs configuring per repo.
 
 ## Why the version is injected rather than read
 
@@ -72,14 +90,31 @@ scripts/package-addon --version 1.2.0
 scripts/verify-package 1.2.0
 scripts/release-notes 1.2.0 > /tmp/notes.md
 
+git checkout -b release/v1.2.0
 git commit -am "Release v1.2.0"
-git push origin main
+git tag v1.2.0
+git push origin release/v1.2.0 v1.2.0
 gh release create v1.2.0 dist/* --title v1.2.0 --notes-file /tmp/notes.md
+gh pr create --base main --head release/v1.2.0 --title "Release v1.2.0" --fill
 ```
 
-## If the push is rejected
+## Branch protection
 
-The workflow pushes a commit to `main`. If branch protection forbids pushes
-from Actions, either allow the `github-actions[bot]` actor to bypass it for
-this repository, or run the by-hand sequence above through a pull request and
-let the workflow pick up from the merged commit.
+`main` carries the same classic protection as every other addon repository in
+the organization:
+
+| Setting | Value |
+| --- | --- |
+| Require a pull request before merging | yes, 0 required approvals |
+| Required status checks | `verify` (from `ci.yml`), not strict |
+| Allow force pushes | no |
+| Allow deletions | no |
+| Include administrators | no — you can still push directly when you must |
+
+`release/*` branches are deliberately unprotected: they are ephemeral, exist
+only between a release build and its pull request merging, and are deleted
+automatically.
+
+Auto-merge must stay enabled on the repository, otherwise the final step of a
+release fails and the version bump sits in an open pull request. The release
+itself is already published at that point, so the fix is simply to merge it.
