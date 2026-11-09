@@ -206,7 +206,7 @@ install the test runner, and Godot 4.7.
 
 ```sh
 gpm install          # installs the gdtest runner into addons/gdtest
-task lint            # gdkit format check, lint check, uid check
+task lint            # gdkit format, lint, license and uid checks
 task test            # 169 cases across six suites
 task bench           # timings for each pipeline stage
 task demo            # open the interactive demo
@@ -233,3 +233,14 @@ rather than by review.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Every GDScript file carries an SPDX header that `gdkit license` manages and CI
+verifies, so the licensing travels with any file someone copies out of the
+addon:
+
+```gdscript
+# gdkit:license:begin
+# Copyright (c) 2026 Cafecito Games LLC
+# SPDX-License-Identifier: MIT
+# gdkit:license:end
+```

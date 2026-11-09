@@ -87,10 +87,11 @@ jobs:
           scripts/install-godot-linux-ci "$RUNNER_TEMP/godot-bin/godot"
           echo "$RUNNER_TEMP/godot-bin" >> "$GITHUB_PATH"
 
-      - name: Check formatting, lint rules, and uid:// sidecars
+      - name: Check formatting, lint rules, license headers and uid:// sidecars
         run: |
           gdkit format check .
           gdkit lint check .
+          gdkit license check .
           gdkit uid check .
 
       - name: Install pinned addons

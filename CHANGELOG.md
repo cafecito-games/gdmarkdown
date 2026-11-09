@@ -24,3 +24,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An interactive demo scene with three style presets, which is also the
   project's main scene.
 - Benchmarks for each pipeline stage, run with `task bench`.
+- An MIT SPDX header in every GDScript file, managed by `gdkit license` and
+  verified in CI.

@@ -1,3 +1,8 @@
+# gdkit:license:begin
+# Copyright (c) 2026 Cafecito Games LLC
+# SPDX-License-Identifier: MIT
+# gdkit:license:end
+
 @tool
 @icon("res://addons/gdmarkdown/icons/markdown_label.svg")
 class_name MarkdownLabel

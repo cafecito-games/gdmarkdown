@@ -6,10 +6,11 @@ tasks:
     deps: [lint, test]
 
   lint:
-    desc: Check GDScript formatting, lint rules, and uid:// sidecars with gdkit
+    desc: Check GDScript formatting, lint rules, license headers and uid:// sidecars
     cmds:
       - gdkit format check .
       - gdkit lint check .
+      - gdkit license check .
       - gdkit uid check .
 
   format:
@@ -21,6 +22,11 @@ tasks:
     desc: Write missing uid:// sidecars
     cmds:
       - gdkit uid write .
+
+  license:
+    desc: Add or refresh the MIT license header in every GDScript file
+    cmds:
+      - gdkit license write .
 
   install:
     desc: Install pinned addons, including the gdtest runner

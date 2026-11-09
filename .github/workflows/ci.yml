@@ -33,6 +33,9 @@ jobs:
       - name: Check lint rules
         run: gdkit lint check .
 
+      - name: Check license headers
+        run: gdkit license check .
+
       - name: Check uid:// sidecars
         run: gdkit uid check .
 
