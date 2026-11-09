@@ -81,6 +81,21 @@ extends Resource
 		preserve_soft_breaks = value
 		emit_changed()
 
+## Whether a fenced or indented code block is drawn as a solid rectangle. The
+## rectangle is a single-cell BBCode table, which does not wrap long lines;
+## turning this off falls back to a background that follows the text and wraps,
+## at the cost of a ragged right edge.
+@export var solid_code_background: bool = true:
+	set(value):
+		solid_code_background = value
+		emit_changed()
+
+## Padding inside a solid code block, in pixels.
+@export_range(0, 64, 1) var code_block_padding: int = 10:
+	set(value):
+		code_block_padding = maxi(0, value)
+		emit_changed()
+
 ## Whether a fenced code block's info string is shown above the block.
 @export var show_code_language: bool = false:
 	set(value):
@@ -91,6 +106,12 @@ extends Resource
 @export_range(0, 4096, 1) var image_width: int = 0:
 	set(value):
 		image_width = maxi(0, value)
+		emit_changed()
+
+## Padding inside a table cell, in pixels: x horizontally, y vertically.
+@export var table_cell_padding: Vector2i = Vector2i(10, 4):
+	set(value):
+		table_cell_padding = Vector2i(maxi(0, value.x), maxi(0, value.y))
 		emit_changed()
 
 ## Whether table cells render inside a BBCode table. Disable it to render rows as

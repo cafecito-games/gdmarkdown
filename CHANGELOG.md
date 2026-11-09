@@ -21,3 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thematic breaks, hard line breaks, backslash escapes, and HTML entities.
 - GitHub Flavored Markdown support: tables with column alignment, strikethrough,
   task lists, and bare URL autolinks.
+- An interactive demo scene with three style presets, which is also the
+  project's main scene.
+- Benchmarks for each pipeline stage, run with `task bench`.

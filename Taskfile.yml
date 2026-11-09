@@ -36,3 +36,18 @@ tasks:
     desc: Cut a gpm release archive into dist/
     cmds:
       - ./scripts/package-addon
+
+  bench:
+    desc: Run the gdtest benchmarks
+    cmds:
+      - ./addons/gdtest/gdtest bench
+
+  demo:
+    desc: Run the interactive demo
+    cmds:
+      - godot --path .
+
+  screenshots:
+    desc: Regenerate the README screenshots in docs/images
+    cmds:
+      - ./scripts/capture-screenshots

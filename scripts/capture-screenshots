@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Regenerates the README screenshots in docs/images.
+#
+# Needs a real rendering context, so this runs Godot windowed rather than
+# headless: a headless run writes blank images. A window opens briefly and
+# closes on its own.
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+godot="${GODOT:-godot}"
+
+if ! command -v "${godot}" >/dev/null 2>&1; then
+	echo "godot not found on PATH; set GODOT to the binary to use" >&2
+	exit 1
+fi
+
+"${godot}" --path "${repository_root}" --script res://demo/capture.gd

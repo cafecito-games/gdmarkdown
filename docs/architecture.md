@@ -81,6 +81,15 @@ BBCode's own `[ul]` and `[ol]`. Those tags split items on newlines, which makes
 them unable to carry a nested list, and they offer no control over task glyphs
 or an ordered list that starts at something other than one.
 
+A code block is wrapped in a single-cell BBCode table rather than a background
+tag. A background tag covers only the glyphs it wraps, so a code block drawn
+with one ends up with a ragged right edge, and padding the lines does not fix
+it: the text server trims trailing whitespace during shaping, and padding with
+non-breaking spaces falls out of the monospace font into a fallback with a
+different advance. A cell is a true rectangle and takes real padding. The cost
+is that a cell does not wrap, which `MarkdownStyle.solid_code_background`
+exists to turn off.
+
 Images are the one place the emitter touches the engine: a `res://` or `user://`
 path is checked with `ResourceLoader.exists()` before becoming an `[img]`. A
 path that does not resolve falls back to its alternate text, and a remote URL
@@ -104,12 +113,28 @@ Two consequences are worth knowing before editing:
   `void` — and join through `MarkdownScanner.join()`, which exists for exactly
   that reason.
 
+## The demo
+
+`demo/demo.tscn` is the project's main scene: a document list, a
+`MarkdownLabel`, and a style picker over the three presets in
+`demo/demo_presets.gd`. `demo/capture.gd` reuses those presets to render the
+README screenshots into `docs/images`, through `scripts/capture-screenshots`.
+
+The capture renders into a `SubViewport` of an exact size rather than into the
+window, so the images do not depend on the display the capture ran on, and a
+document shot can be resized to the height its content measures.
+
 ## Verification
 
 ```sh
 task lint   # gdkit format check, lint check, uid check
 task test   # ./addons/gdtest/gdtest run
+task bench  # ./addons/gdtest/gdtest bench
 ```
+
+Benchmarks live in `tests/markdown.bench.gd` and measure each stage separately,
+because the stages regress for different reasons. Timings are informational and
+never fail a build.
 
 `tests/fixtures/kitchen_sink.md` exercises every supported construct and
 `kitchen_sink.bbcode` holds its reviewed output. Any change that moves a single

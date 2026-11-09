@@ -2,6 +2,7 @@
   "version": 1,
   "source_roots": [
     "addons/gdmarkdown",
+    "demo",
     "tests"
   ],
   "exclude": [

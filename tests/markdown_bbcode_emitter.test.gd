@@ -3,6 +3,13 @@ extends GDTest
 ## receives. Every case uses the same deterministic style so the expected
 ## strings stay readable.
 
+## The rendering of a one-line code block under [method _style], spelled out
+## once because several cases assert on it.
+const CODE_BLOCK: String = (
+		"[table=1][cell bg=#000000ff,#000000ff padding=10,10,10,10]"
+		+ "[color=#ffffffff][code]a[/code][/color][/cell][/table]"
+)
+
 
 func get_suite_name() -> String:
 	return "MarkdownBbcodeEmitter"
@@ -51,14 +58,8 @@ func test_converts_to_bbcode__cases() -> Dictionary[String, Variant]:
 		"nested list indents twice": ["- a\n\t- b", "[indent]• a\n[indent]• b[/indent][/indent]"],
 		"block quote": ["> a", "[indent][color=#808080ff]a[/color][/indent]"],
 		"thematic break": ["---", "[center][color=#808080ff]--[/color][/center]"],
-		"fenced code block": [
-			"```\na\n```",
-			"[bgcolor=#000000ff][color=#ffffffff][code]a[/code][/color][/bgcolor]",
-		],
-		"indented code block": [
-			"    a",
-			"[bgcolor=#000000ff][color=#ffffffff][code]a[/code][/color][/bgcolor]",
-		],
+		"fenced code block": ["```\na\n```", CODE_BLOCK],
+		"indented code block": ["    a", CODE_BLOCK],
 		"blocks are separated by a blank line": [
 			"# Title\n\ntext",
 			"[font_size=32][b]Title[/b][/font_size]\n\ntext",
@@ -81,8 +82,10 @@ func test_converts_to_bbcode__cases() -> Dictionary[String, Variant]:
 		"table": [
 			"| a | b |\n| --- | --: |\n| 1 | 2 |",
 			(
-					"[table=2][cell][b]a[/b][/cell][cell][right][b]b[/b][/right][/cell]"
-					+ "[cell]1[/cell][cell][right]2[/right][/cell][/table]"
+					"[table=2][cell padding=10,4,10,4][b]a[/b][/cell]"
+					+ "[cell padding=10,4,10,4][right][b]b[/b][/right][/cell]"
+					+ "[cell padding=10,4,10,4]1[/cell]"
+					+ "[cell padding=10,4,10,4][right]2[/right][/cell][/table]"
 			),
 		],
 		"empty source": ["", ""],
@@ -132,10 +135,17 @@ func test_shows_the_code_language_when_the_style_asks_for_it() -> void:
 
 	expect_equal(
 			Markdown.to_bbcode("```gdscript\na\n```", style),
-			(
-					"[color=#808080ff][i]gdscript[/i][/color]\n"
-					+ "[bgcolor=#000000ff][color=#ffffffff][code]a[/code][/color][/bgcolor]"
-			)
+			"[color=#808080ff][i]gdscript[/i][/color]\n" + CODE_BLOCK
+	)
+
+
+func test_falls_back_to_a_wrapping_code_background() -> void:
+	var style: MarkdownStyle = _style()
+	style.solid_code_background = false
+
+	expect_equal(
+			Markdown.to_bbcode("```\na\n```", style),
+			"[bgcolor=#000000ff][color=#ffffffff][code]a[/code][/color][/bgcolor]"
 	)
 
 

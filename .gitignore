@@ -3,3 +3,4 @@
 addons/gdtest/
 dist/
 *.translation
+.DS_Store

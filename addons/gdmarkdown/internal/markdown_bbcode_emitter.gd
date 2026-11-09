@@ -84,11 +84,7 @@ func _emit_heading(node: MarkdownNode) -> String:
 
 
 func _emit_code_block(node: MarkdownNode) -> String:
-	var body: String = "[bgcolor=%s][color=%s][code]%s[/code][/color][/bgcolor]" % [
-		_color(_style.code_background_color),
-		_color(_style.code_text_color),
-		escape(node.text),
-	]
+	var body: String = _code_block_body(escape(node.text))
 	if _style.show_code_language and not node.code_language.is_empty():
 		var label: String = "[color=%s][i]%s[/i][/color]" % [
 			_color(_style.quote_color),
@@ -96,6 +92,32 @@ func _emit_code_block(node: MarkdownNode) -> String:
 		]
 		return "%s\n%s" % [label, body]
 	return body
+
+
+## Wraps a code block's text in its background. A single-cell table is used
+## rather than a background tag because a background tag only covers the glyphs
+## it wraps, which leaves a code block with one ragged edge; a cell is a true
+## rectangle and takes real padding.
+func _code_block_body(escaped: String) -> String:
+	var background: String = _color(_style.code_background_color)
+	var foreground: String = _color(_style.code_text_color)
+	if not _style.solid_code_background:
+		return "[bgcolor=%s][color=%s][code]%s[/code][/color][/bgcolor]" % [
+			background,
+			foreground,
+			escaped,
+		]
+	var padding: int = _style.code_block_padding
+	return "[table=1][cell bg=%s,%s padding=%d,%d,%d,%d][color=%s][code]%s[/code][/color][/cell][/table]" % [
+		background,
+		background,
+		padding,
+		padding,
+		padding,
+		padding,
+		foreground,
+		escaped,
+	]
 
 
 func _emit_block_quote(node: MarkdownNode) -> String:
@@ -173,9 +195,14 @@ func _emit_table_row(table: MarkdownNode, row: MarkdownNode, is_header: bool) ->
 		var content: String = emit_inlines(cell.children)
 		if is_header:
 			content = "[b]%s[/b]" % content
-		parts.append("[cell]%s[/cell]" % _align(table, column, content))
+		parts.append("[cell %s]%s[/cell]" % [_cell_padding(), _align(table, column, content)])
 		column += 1
 	return MarkdownScanner.join("", parts)
+
+
+func _cell_padding() -> String:
+	var padding: Vector2i = _style.table_cell_padding
+	return "padding=%d,%d,%d,%d" % [padding.x, padding.y, padding.x, padding.y]
 
 
 func _emit_plain_table(node: MarkdownNode) -> String:
