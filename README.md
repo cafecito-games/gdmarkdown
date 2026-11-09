@@ -200,9 +200,10 @@ your own hardware.
 
 ## Developing
 
-Requires [gdkit](https://github.com/cafecito-games/gdkit) for linting and
-formatting, [gpm](https://github.com/cafecito-games/godot-package-manager) to
-install the test runner, and Godot 4.7.
+Requires [gdkit](https://github.com/cafecito-games/gdkit) 0.11.0 or newer for
+linting, formatting and license headers,
+[gpm](https://github.com/cafecito-games/godot-package-manager) 0.6.0 or newer
+to install the test runner, and Godot 4.7.
 
 ```sh
 gpm install          # installs the gdtest runner into addons/gdtest

@@ -10,7 +10,7 @@ tasks:
     cmds:
       - gdkit format check .
       - gdkit lint check .
-      - gdkit license check .
+      - gdkit license check --minimum-version 0.11.0 .
       - gdkit uid check .
 
   format:
@@ -26,7 +26,7 @@ tasks:
   license:
     desc: Add or refresh the MIT license header in every GDScript file
     cmds:
-      - gdkit license write .
+      - gdkit license write --minimum-version 0.11.0 .
 
   install:
     desc: Install pinned addons, including the gdtest runner
