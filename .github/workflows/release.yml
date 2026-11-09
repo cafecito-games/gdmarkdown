@@ -77,8 +77,13 @@ jobs:
 
       - name: Install pinned gdkit and gpm
         run: |
-          go install github.com/cafecito-games/gdkit/cmd/gdkit@v0.10.0
+          go install github.com/cafecito-games/gdkit/cmd/gdkit@v0.11.0
           go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+          # gdkit's version string is the contract the checks below rely on;
+          # `license` only exists from 0.11.0, so assert rather than discover it
+          # halfway through a run.
+          gdkit_version=$(gdkit --version)
+          [[ "$gdkit_version" == "gdkit version 0.11.0"* ]]
 
       - name: Install pinned Godot 4.7.2
         run: |
@@ -87,10 +92,11 @@ jobs:
           scripts/install-godot-linux-ci "$RUNNER_TEMP/godot-bin/godot"
           echo "$RUNNER_TEMP/godot-bin" >> "$GITHUB_PATH"
 
-      - name: Check formatting, lint rules, and uid:// sidecars
+      - name: Check formatting, lint rules, license headers and uid:// sidecars
         run: |
           gdkit format check .
           gdkit lint check .
+          gdkit license check .
           gdkit uid check .
 
       - name: Install pinned addons

@@ -1,3 +1,8 @@
+# gdkit:license:begin
+# Copyright (c) 2026 Cafecito Games LLC
+# SPDX-License-Identifier: MIT
+# gdkit:license:end
+
 extends GDTest
 ## End-to-end conversion, from Markdown source to the BBCode a RichTextLabel
 ## receives. Every case uses the same deterministic style so the expected

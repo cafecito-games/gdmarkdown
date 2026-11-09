@@ -1,3 +1,8 @@
+# gdkit:license:begin
+# Copyright (c) 2026 Cafecito Games LLC
+# SPDX-License-Identifier: MIT
+# gdkit:license:end
+
 class_name MarkdownDocument
 extends RefCounted
 ## A parsed Markdown document: its block tree plus the link reference

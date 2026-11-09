@@ -1,3 +1,8 @@
+# gdkit:license:begin
+# Copyright (c) 2026 Cafecito Games LLC
+# SPDX-License-Identifier: MIT
+# gdkit:license:end
+
 class_name MarkdownInlineParser
 extends RefCounted
 ## Expands the raw inline Markdown left on leaf blocks into inline child nodes.

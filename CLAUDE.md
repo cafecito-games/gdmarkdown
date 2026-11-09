@@ -8,7 +8,7 @@ Read `docs/architecture.md` before changing the pipeline.
 Both must pass before any change is complete:
 
 ```sh
-gdkit format check . && gdkit lint check . && gdkit uid check .
+gdkit format check . && gdkit lint check . && gdkit license check . && gdkit uid check .
 ./addons/gdtest/gdtest run
 ```
 
@@ -22,6 +22,10 @@ tree.
 - `return_value_discarded` is an error. `PackedStringArray.append()` returns
   `bool` and `Signal.connect()` returns `int`. Accumulate into `Array[String]`
   and join with `MarkdownScanner.join()`.
+- Every GDScript file carries an MIT header between `# gdkit:license:begin` and
+  `# gdkit:license:end`. gdkit owns every byte of that region: add files and run
+  `gdkit license write .` (or `task license`), never hand-edit inside the
+  markers. The header text lives in `.gdkit/license.json`.
 - `tests/fixtures/kitchen_sink.bbcode` is a reviewed golden file. If a change
   moves it, read the diff and confirm the new output is correct before
   committing it.

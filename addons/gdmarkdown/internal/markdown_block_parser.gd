@@ -1,3 +1,8 @@
+# gdkit:license:begin
+# Copyright (c) 2026 Cafecito Games LLC
+# SPDX-License-Identifier: MIT
+# gdkit:license:end
+
 class_name MarkdownBlockParser
 extends RefCounted
 ## Builds the block structure of a Markdown document.

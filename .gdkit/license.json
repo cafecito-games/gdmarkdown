@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "source_roots": [
+    "addons/gdmarkdown",
+    "demo",
+    "tests"
+  ],
+  "exclude": [
+    ".git/**",
+    ".godot/**",
+    ".gdkit/**",
+    "addons/gdtest/**"
+  ],
+  "header": [
+    "Copyright (c) 2026 Cafecito Games LLC",
+    "SPDX-License-Identifier: MIT"
+  ]
+}
