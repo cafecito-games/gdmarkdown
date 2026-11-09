@@ -154,14 +154,29 @@ jobs:
       - name: Inject the version into plugin.cfg and the changelog
         run: scripts/set-version "$RELEASE_VERSION"
 
+      # The version-bearing files are allowed to move, not required to. A
+      # release whose number already matches the committed plugin.cfg, as the
+      # first one does, leaves that file untouched; what matters is that no
+      # other file changed and that both files end up carrying the version.
       - name: Confirm only the version-bearing files changed
         run: |
           set -euo pipefail
-          changed=$(git diff --name-only)
-          expected=$'CHANGELOG.md\naddons/gdmarkdown/plugin.cfg'
-          if [[ "$(sort <<<"$changed")" != "$(sort <<<"$expected")" ]]; then
-            echo "::error::set-version touched unexpected files:"
-            echo "$changed"
+          while IFS= read -r changed; do
+            [[ -z "$changed" ]] && continue
+            case "$changed" in
+              CHANGELOG.md | addons/gdmarkdown/plugin.cfg) ;;
+              *)
+                echo "::error::set-version touched an unexpected file: $changed"
+                exit 1
+                ;;
+            esac
+          done < <(git diff --name-only)
+          if ! grep -qx "version=\"$RELEASE_VERSION\"" addons/gdmarkdown/plugin.cfg; then
+            echo "::error::plugin.cfg does not declare version $RELEASE_VERSION"
+            exit 1
+          fi
+          if ! grep -q "^## \[$RELEASE_VERSION\] - " CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no section for $RELEASE_VERSION"
             exit 1
           fi
 
