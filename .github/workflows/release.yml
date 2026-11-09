@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Which semantic version part to bump"
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release-version.outputs.tag }}
+      version: ${{ steps.release-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require the main branch
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "::error::Releases must run from main, not $GITHUB_REF_NAME"
+            exit 1
+          fi
+
+      - name: Compute release version
+        id: release-version
+        run: |
+          set -euo pipefail
+          latest=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [[ -z "$latest" ]]; then
+            latest="v0.0.0"
+          fi
+          if [[ ! "$latest" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Latest tag '$latest' is not strict vMAJOR.MINOR.PATCH semver"
+            exit 1
+          fi
+          major=${BASH_REMATCH[1]}
+          minor=${BASH_REMATCH[2]}
+          patch=${BASH_REMATCH[3]}
+          case "${{ inputs.bump }}" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+          esac
+          tag="v${major}.${minor}.${patch}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "::error::Tag $tag already exists"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${tag} (${{ inputs.bump }} bump from ${latest})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Require changelog entries for the release
+        run: scripts/release-notes-present
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Install pinned gdkit and gpm
+        run: |
+          go install github.com/cafecito-games/gdkit/cmd/gdkit@v0.10.0
+          go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+
+      - name: Install pinned Godot 4.7.2
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libfontconfig1
+          scripts/install-godot-linux-ci "$RUNNER_TEMP/godot-bin/godot"
+          echo "$RUNNER_TEMP/godot-bin" >> "$GITHUB_PATH"
+
+      - name: Check formatting, lint rules, and uid:// sidecars
+        run: |
+          gdkit format check .
+          gdkit lint check .
+          gdkit uid check .
+
+      - name: Install pinned addons
+        run: gpm install --host-only
+
+      - name: Run tests
+        run: ./addons/gdtest/gdtest run --no-daemon
+
+  publish:
+    needs: quality
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.quality.outputs.tag }}
+      RELEASE_VERSION: ${{ needs.quality.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+
+      - name: Install pinned gpm
+        run: go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+
+      - name: Inject the version into plugin.cfg and the changelog
+        run: scripts/set-version "$RELEASE_VERSION"
+
+      - name: Confirm only the version-bearing files changed
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only)
+          expected=$'CHANGELOG.md\naddons/gdmarkdown/plugin.cfg'
+          if [[ "$(sort <<<"$changed")" != "$(sort <<<"$expected")" ]]; then
+            echo "::error::set-version touched unexpected files:"
+            echo "$changed"
+            exit 1
+          fi
+
+      - name: Build and verify the release package
+        run: |
+          set -euo pipefail
+          scripts/package-addon --version "$RELEASE_VERSION"
+          scripts/verify-package "$RELEASE_VERSION"
+
+      - name: Write the release notes
+        run: scripts/release-notes "$RELEASE_VERSION" > "$RUNNER_TEMP/notes.md"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gdmarkdown-${{ needs.quality.outputs.version }}-gpm
+          path: dist/*
+          if-no-files-found: error
+
+      - name: Commit the version bump to main
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          if [[ "$(git rev-parse origin/main)" != "$GITHUB_SHA" ]]; then
+            echo "::error::main advanced after this release started; rerun from the new head"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md addons/gdmarkdown/plugin.cfg
+          git commit -m "Release ${RELEASE_TAG}"
+          git push origin "HEAD:main"
+          echo "RELEASE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Publish one atomic release asset set
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $RELEASE_TAG already exists"
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" dist/* \
+            --target "$RELEASE_SHA" \
+            --title "$RELEASE_TAG" \
+            --notes-file "$RUNNER_TEMP/notes.md"
+          echo "Published $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

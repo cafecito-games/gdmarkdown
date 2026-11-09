@@ -12,6 +12,8 @@
 [package]
 name       = "gdmarkdown"
 addon_path = "addons/gdmarkdown"
-# Always overridden by scripts/package-addon with the version in plugin.cfg,
-# which is the single source of truth.
+# Always overridden by scripts/package-addon. For a release the version comes
+# from the bump chosen in the Release workflow and is injected into both the
+# index and the staged plugin.cfg, so a cut never depends on a committed file
+# being current. A local cut falls back to the committed plugin.cfg value.
 version    = "0.0.0"

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Writes a release version into the files that carry it.
+#
+#   scripts/set-version 1.2.0
+#
+# Updates addons/gdmarkdown/plugin.cfg, which is the single source of truth for
+# the packaged version, and rolls the changelog's Unreleased section into a
+# dated section for this release. Both edits are idempotent in the sense that
+# running twice with the same version is refused rather than applied twice.
+set -euo pipefail
+
+version="${1:-}"
+if [[ -z "${version}" || $# -ne 1 ]]; then
+	echo "usage: scripts/set-version MAJOR.MINOR.PATCH" >&2
+	exit 2
+fi
+if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+	echo "version '${version}' is not strict MAJOR.MINOR.PATCH" >&2
+	exit 2
+fi
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+plugin_config="${repository_root}/addons/gdmarkdown/plugin.cfg"
+changelog="${repository_root}/CHANGELOG.md"
+today="$(date -u +%Y-%m-%d)"
+
+if ! grep -q '^version="' "${plugin_config}"; then
+	echo "no version key in ${plugin_config}" >&2
+	exit 1
+fi
+if grep -q "^## \[${version}\]" "${changelog}"; then
+	echo "${changelog} already has a section for ${version}" >&2
+	exit 1
+fi
+if ! grep -q '^## \[Unreleased\]' "${changelog}"; then
+	echo "no Unreleased section in ${changelog}" >&2
+	exit 1
+fi
+
+python3 - "${plugin_config}" "${changelog}" "${version}" "${today}" <<'PYTHON'
+import pathlib
+import sys
+
+plugin_config, changelog, version, today = (pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]),
+                                            sys.argv[3], sys.argv[4])
+
+text = plugin_config.read_text()
+lines = []
+for line in text.splitlines(keepends=True):
+    if line.startswith('version="'):
+        line = 'version="%s"\n' % version
+    lines.append(line)
+plugin_config.write_text("".join(lines))
+
+notes = changelog.read_text()
+notes = notes.replace(
+    "## [Unreleased]",
+    "## [Unreleased]\n\n## [%s] - %s" % (version, today),
+    1,
+)
+changelog.write_text(notes)
+PYTHON
+
+echo "set version ${version} in plugin.cfg and opened a ${version} changelog section"

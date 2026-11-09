@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Verifies a release cut before it is published.
+#
+#   scripts/verify-package MAJOR.MINOR.PATCH
+#
+# Consumers verify every byte against their lock file, so a broken cut fails on
+# their machines rather than on the publisher's. This checks the three things
+# that have actually gone wrong on addons cut this way: a stale version inside
+# the archive, repository files that are not part of the addon reaching the
+# mandatory core slice, and a non-reproducible archive.
+set -euo pipefail
+
+version="${1:-}"
+if [[ -z "${version}" || $# -ne 1 ]]; then
+	echo "usage: scripts/verify-package MAJOR.MINOR.PATCH" >&2
+	exit 2
+fi
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+work="$(mktemp -d)"
+trap 'rm -rf "${work}"' EXIT
+
+"${repository_root}/scripts/package-addon" --version "${version}" --out "${work}/first" >/dev/null
+"${repository_root}/scripts/package-addon" --version "${version}" --out "${work}/second" >/dev/null
+
+archive="${work}/first/gdmarkdown-${version}-core.zip"
+index="${work}/first/gpm-index.toml"
+
+failures=0
+fail() {
+	echo "  FAIL  $1" >&2
+	failures=$((failures + 1))
+}
+
+echo "Verifying gdmarkdown ${version}"
+
+# The index must declare the mandatory core slice and this version.
+if [[ ! -f "${index}" ]]; then
+	fail "no gpm-index.toml was written"
+elif ! grep -q "^version = \"${version}\"$" "${index}"; then
+	fail "the index does not declare version ${version}"
+elif ! grep -q '^\s*\[slices.core\]$' "${index}"; then
+	fail "the index declares no core slice"
+fi
+
+# A pure-GDScript addon publishes core and nothing else.
+slice_count="$(grep -c '^\s*\[slices\.' "${index}" || true)"
+if [[ "${slice_count}" != "1" ]]; then
+	fail "expected exactly one slice, found ${slice_count}"
+fi
+
+if [[ ! -f "${archive}" ]]; then
+	fail "no core archive was written"
+else
+	listing="$(unzip -Z1 "${archive}")"
+
+	# The injected version must be the one inside the shipped plugin.cfg.
+	packaged_config="$(unzip -p "${archive}" plugin.cfg)"
+	if ! grep -q "^version=\"${version}\"$" <<<"${packaged_config}"; then
+		fail "the packaged plugin.cfg does not declare version ${version}"
+	fi
+
+	# Nothing outside the addon may reach the slice every consumer downloads.
+	while IFS= read -r entry; do
+		case "${entry}" in
+			demo/* | tests/* | docs/* | scripts/* | packaging/* | .git/* | *.import.md)
+				fail "non-addon file in the core slice: ${entry}"
+				;;
+		esac
+	done <<<"${listing}"
+
+	for required in plugin.cfg markdown.gd markdown_label.gd markdown_style.gd; do
+		if ! grep -qx "${required}" <<<"${listing}"; then
+			fail "missing from the core slice: ${required}"
+		fi
+	done
+fi
+
+# Two cuts of an unchanged tree must be byte-identical.
+if ! diff -r "${work}/first" "${work}/second" >/dev/null 2>&1; then
+	fail "the cut is not reproducible; two runs differed"
+fi
+
+if [[ "${failures}" -ne 0 ]]; then
+	echo "${failures} check(s) failed" >&2
+	exit 1
+fi
+
+echo "  ok  core slice only, version ${version}, reproducible"

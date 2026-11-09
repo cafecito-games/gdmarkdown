@@ -1,15 +1,39 @@
 #!/usr/bin/env bash
 # Cuts a gpm release archive for the gdmarkdown addon.
 #
+#   scripts/package-addon [--version MAJOR.MINOR.PATCH] [--out DIRECTORY]
+#
 # Packages from a staged copy of addons/gdmarkdown rather than from the working
-# tree, so nothing that is not part of the shipped addon can reach the core
-# slice. The version comes from plugin.cfg.
+# tree, so nothing outside the shipped addon can reach the core slice.
+#
+# --version injects the version into the staged plugin.cfg and into the index,
+# so a release never depends on the committed plugin.cfg being current. Without
+# it the committed plugin.cfg value is used, which is what a local test cut
+# wants.
 set -euo pipefail
 
 readonly MINIMUM_GPM_VERSION="0.6.0"
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-output_directory="${1:-${repository_root}/dist}"
+output_directory="${repository_root}/dist"
+version=""
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--version)
+			version="${2:-}"
+			shift 2
+			;;
+		--out)
+			output_directory="${2:-}"
+			shift 2
+			;;
+		*)
+			echo "usage: scripts/package-addon [--version X.Y.Z] [--out DIRECTORY]" >&2
+			exit 2
+			;;
+	esac
+done
 
 if ! command -v gpm >/dev/null 2>&1; then
 	echo "gpm is not installed: brew install cafecito-games/tap/gpm" >&2
@@ -22,9 +46,15 @@ if [[ "$(printf '%s\n%s\n' "${MINIMUM_GPM_VERSION}" "${installed_version}" | sor
 	exit 1
 fi
 
-version="$(sed -n 's/^version="\(.*\)"$/\1/p' "${repository_root}/addons/gdmarkdown/plugin.cfg")"
 if [[ -z "${version}" ]]; then
-	echo "could not read version from addons/gdmarkdown/plugin.cfg" >&2
+	version="$(sed -n 's/^version="\(.*\)"$/\1/p' "${repository_root}/addons/gdmarkdown/plugin.cfg")"
+	if [[ -z "${version}" ]]; then
+		echo "could not read version from addons/gdmarkdown/plugin.cfg" >&2
+		exit 1
+	fi
+fi
+if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+	echo "version '${version}' is not strict MAJOR.MINOR.PATCH" >&2
 	exit 1
 fi
 
@@ -34,6 +64,24 @@ trap 'rm -rf "${staging_directory}"' EXIT
 mkdir -p "${staging_directory}/addons"
 cp -R "${repository_root}/addons/gdmarkdown" "${staging_directory}/addons/gdmarkdown"
 cp "${repository_root}/packaging/gpm-package.toml" "${staging_directory}/gpm-package.toml"
+
+staged_config="${staging_directory}/addons/gdmarkdown/plugin.cfg"
+python3 - "${staged_config}" "${version}" <<'PYTHON'
+import pathlib
+import sys
+
+config, version = pathlib.Path(sys.argv[1]), sys.argv[2]
+lines = []
+replaced = False
+for line in config.read_text().splitlines(keepends=True):
+    if line.startswith('version="'):
+        line = 'version="%s"\n' % version
+        replaced = True
+    lines.append(line)
+if not replaced:
+    raise SystemExit("no version key in %s" % config)
+config.write_text("".join(lines))
+PYTHON
 
 gpm package --dir "${staging_directory}" --out "${output_directory}" --version "${version}"
 

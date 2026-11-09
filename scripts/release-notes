@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Prints the changelog section for a version, for use as a release body.
+#
+#   scripts/release-notes 1.2.0
+#
+# Exits 1 when the section is missing or empty, so a release never publishes
+# with notes that silently say nothing.
+set -euo pipefail
+
+version="${1:-}"
+if [[ -z "${version}" || $# -ne 1 ]]; then
+	echo "usage: scripts/release-notes MAJOR.MINOR.PATCH" >&2
+	exit 2
+fi
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+notes="$(
+	awk -v version="${version}" '
+		$0 ~ "^## \\[" version "\\]" { collecting = 1; next }
+		collecting && /^## \[/ { exit }
+		collecting { print }
+	' "${repository_root}/CHANGELOG.md"
+)"
+
+# Trim leading and trailing blank lines.
+notes="$(sed -e '/./,$!d' <<<"${notes}" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')"
+
+if [[ -z "${notes}" ]]; then
+	echo "no changelog entries for ${version}" >&2
+	exit 1
+fi
+
+printf '%s\n' "${notes}"

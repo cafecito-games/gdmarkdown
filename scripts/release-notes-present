@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Fails when the changelog's Unreleased section is empty.
+#
+# The release workflow runs this before the build, so a release with nothing
+# written about it stops in seconds rather than after the whole gate has run and
+# a version bump has been pushed.
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+pending="$(
+	awk '
+		/^## \[Unreleased\]/ { collecting = 1; next }
+		collecting && /^## \[/ { exit }
+		collecting { print }
+	' "${repository_root}/CHANGELOG.md"
+)"
+
+if [[ -z "$(tr -d '[:space:]' <<<"${pending}")" ]]; then
+	echo "the Unreleased section of CHANGELOG.md is empty; write the release notes first" >&2
+	exit 1
+fi
+
+echo "Unreleased section has entries"

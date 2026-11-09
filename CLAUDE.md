@@ -31,5 +31,11 @@ tree.
   needs a real rendering context: a headless run writes blank images. Rerun it
   after any change to rendering, and look at the result.
 - The release manifest lives at `packaging/gpm-package.toml`, deliberately not
-  at the repository root. Cut releases with `./scripts/package-addon`, which
-  reads the version from `plugin.cfg`.
+  at the repository root. Never bump a version by hand: the Release workflow
+  takes a patch/minor/major choice, derives the version from the latest tag,
+  and `scripts/set-version` injects it into `plugin.cfg` and the changelog.
+  `scripts/package-addon --version X.Y.Z` injects it into the staged tree too,
+  so a cut never depends on a committed file being current.
+- Write changelog entries under `## [Unreleased]` as you go.
+  `scripts/release-notes-present` fails a release when that section is empty,
+  and the section becomes the GitHub release body.

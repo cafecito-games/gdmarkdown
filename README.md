@@ -12,7 +12,8 @@
 [Quick start](#quick-start) ·
 [Styling](#styling) ·
 [What is supported](#what-is-supported) ·
-[Architecture](docs/architecture.md)
+[Architecture](docs/architecture.md) ·
+[Releasing](docs/releasing.md)
 
 <img src="docs/images/demo.png" alt="The gdmarkdown demo: a document list on the left, a rendered patch-notes document on the right" width="880">
 
@@ -204,13 +205,21 @@ formatting, [gpm](https://github.com/cafecito-games/godot-package-manager) to
 install the test runner, and Godot 4.7.
 
 ```sh
-gpm install        # installs the gdtest runner into addons/gdtest
-task lint          # gdkit format check, lint check, uid check
-task test          # 169 cases across six suites
-task bench         # timings for each pipeline stage
-task demo          # open the interactive demo
-task screenshots   # regenerate the images in this README
+gpm install          # installs the gdtest runner into addons/gdtest
+task lint            # gdkit format check, lint check, uid check
+task test            # 169 cases across six suites
+task bench           # timings for each pipeline stage
+task demo            # open the interactive demo
+task screenshots     # regenerate the images in this README
+task verify:package  # cut and verify a release archive without publishing
 ```
+
+Releases are cut by the **Release** workflow: pick `patch`, `minor`, or
+`major`, and the version is derived from the latest tag, injected into
+`plugin.cfg` and the changelog, verified, committed, tagged and published. See
+[docs/releasing.md](docs/releasing.md). Write changelog entries under
+`## [Unreleased]` as you go — that section becomes the release body, and a
+release with it empty is refused.
 
 Every GDScript warning Godot 4.7 offers is enabled as an **error** in
 `project.godot`, including `untyped_declaration`, `inferred_declaration` and

@@ -37,6 +37,11 @@ tasks:
     cmds:
       - ./scripts/package-addon
 
+  verify:package:
+    desc: Cut and verify a release package without publishing it
+    cmds:
+      - ./scripts/verify-package {{.VERSION | default "0.0.0"}}
+
   bench:
     desc: Run the gdtest benchmarks
     cmds:
