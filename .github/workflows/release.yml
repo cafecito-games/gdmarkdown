@@ -24,6 +24,8 @@ jobs:
   quality:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/native/.scons-cache
     outputs:
       tag: ${{ steps.release-version.outputs.tag }}
       version: ${{ steps.release-version.outputs.version }}
@@ -82,25 +84,54 @@ jobs:
         with:
           go-version: "1.26"
 
+      - name: Cache gdkit and gpm binaries
+        id: cache-go-tools
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: go-tools-${{ runner.os }}-${{ runner.arch }}-gdkit-0.11.0-gpm-0.6.0
+
       - name: Install pinned gdkit and gpm
         run: |
-          go install github.com/cafecito-games/gdkit/cmd/gdkit@v0.11.0
-          go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
-          gdkit_version=$(gdkit --version)
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          if [[ "${{ steps.cache-go-tools.outputs.cache-hit }}" != "true" ]]; then
+            go install github.com/cafecito-games/gdkit/cmd/gdkit@v0.11.0
+            go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+          fi
+          gdkit_version=$("$(go env GOPATH)/bin/gdkit" --version)
           [[ "$gdkit_version" == "gdkit version 0.11.0"* ]]
+
+      - name: Cache pinned Godot 4.7.2
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/godot-ci/4.7.2-stable
+          key: godot-4.7.2-stable-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install pinned Godot 4.7.2
         run: |
-          scripts/install-godot-linux-ci "$RUNNER_TEMP/godot-bin/godot"
-          echo "$RUNNER_TEMP/godot-bin" >> "$GITHUB_PATH"
+          godot_dir="$HOME/.cache/godot-ci/4.7.2-stable"
+          if [[ ! -x "$godot_dir/godot" ]]; then
+            scripts/install-godot-linux-ci "$godot_dir/godot"
+          fi
+          echo "$godot_dir" >> "$GITHUB_PATH"
+
+      - name: Cache godot-cpp and SCons objects (linux x86_64)
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/.scons-cache
+            native/third_party/godot-cpp/bin
+            native/third_party/godot-cpp/gen
+          key: scons-linux-x86_64-${{ hashFiles('.gitmodules', 'native/SConstruct', 'native/third_party/godot-cpp/SConstruct', 'native/third_party/godot-cpp/gdextension/extension_api.json') }}
+          restore-keys: |
+            scons-linux-x86_64-
 
       - name: Run C++ unit tests
         run: scripts/build-native test-native
 
-      - name: Build Linux x86_64 and Android native libraries
-        run: |
-          scripts/build-native linux x86_64
-          scripts/build-native android
+      - name: Build Linux x86_64 native library
+        run: scripts/build-native linux x86_64
 
       - name: Check Linux GDExtension load
         run: scripts/test-gdextension-load
@@ -115,24 +146,68 @@ jobs:
       - name: Install pinned addons
         run: gpm install --host-only
 
+      - name: Pre-register GDExtension for headless project bootstrap
+        run: |
+          mkdir -p .godot
+          printf 'res://addons/gdmarkdown/gdmarkdown.gdextension\n' > .godot/extension_list.cfg
+
       - name: Run GDScript integration tests
         run: ./addons/gdtest/gdtest run --no-daemon
 
-      - name: Upload Linux x86_64 and Android binaries
+      - name: Upload Linux x86_64 binary
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-linux-x86_64-android
+          name: binaries-linux-x86_64
+          path: addons/gdmarkdown/bin/linux_x86_64/libgdmarkdown.so
+          if-no-files-found: error
+
+  build-android:
+    needs: quality
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, arm32, x86_64]
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/native/.scons-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install SCons
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq scons
+
+      - name: Cache godot-cpp and SCons objects (android ${{ matrix.arch }})
+        uses: actions/cache@v4
+        with:
           path: |
-            addons/gdmarkdown/bin/linux_x86_64/libgdmarkdown.so
-            addons/gdmarkdown/bin/android/libgdmarkdown.android.release.arm64.so
-            addons/gdmarkdown/bin/android/libgdmarkdown.android.release.arm32.so
-            addons/gdmarkdown/bin/android/libgdmarkdown.android.release.x86_64.so
+            native/.scons-cache
+            native/third_party/godot-cpp/bin
+            native/third_party/godot-cpp/gen
+          key: scons-android-${{ matrix.arch }}-${{ hashFiles('.gitmodules', 'native/SConstruct', 'native/third_party/godot-cpp/SConstruct', 'native/third_party/godot-cpp/gdextension/extension_api.json') }}
+          restore-keys: |
+            scons-android-${{ matrix.arch }}-
+
+      - name: Build Android (${{ matrix.arch }}) native library
+        run: scripts/build-native android ${{ matrix.arch }}
+
+      - name: Upload Android (${{ matrix.arch }}) binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-android-${{ matrix.arch }}
+          path: addons/gdmarkdown/bin/android/libgdmarkdown.android.release.${{ matrix.arch }}.so
           if-no-files-found: error
 
   build-linux-arm64:
     needs: quality
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
+    timeout-minutes: 25
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/native/.scons-cache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -142,6 +217,17 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq build-essential scons
+
+      - name: Cache godot-cpp and SCons objects (linux arm64)
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/.scons-cache
+            native/third_party/godot-cpp/bin
+            native/third_party/godot-cpp/gen
+          key: scons-linux-arm64-${{ hashFiles('.gitmodules', 'native/SConstruct', 'native/third_party/godot-cpp/SConstruct', 'native/third_party/godot-cpp/gdextension/extension_api.json') }}
+          restore-keys: |
+            scons-linux-arm64-
 
       - name: Build Linux arm64 native library
         run: scripts/build-native linux arm64
@@ -157,6 +243,10 @@ jobs:
     needs: quality
     runs-on: macos-latest
     timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      SCONS_CACHE: ${{ github.workspace }}/native/.scons-cache
     steps:
       - uses: actions/checkout@v4
         with:
@@ -164,6 +254,17 @@ jobs:
 
       - name: Install SCons
         run: brew install scons
+
+      - name: Cache godot-cpp and SCons objects (apple)
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/.scons-cache
+            native/third_party/godot-cpp/bin
+            native/third_party/godot-cpp/gen
+          key: scons-apple-${{ hashFiles('.gitmodules', 'native/SConstruct', 'native/third_party/godot-cpp/SConstruct', 'native/third_party/godot-cpp/gdextension/extension_api.json') }}
+          restore-keys: |
+            scons-apple-
 
       - name: Require Apple distribution signing secrets
         env:
@@ -229,7 +330,7 @@ jobs:
         if: always()
         run: security delete-keychain "${RUNNER_TEMP}/gdmarkdown-signing.keychain-db" || true
 
-      - name: Archive Apple frameworks preserving symlinks
+      - name: Archive Apple frameworks
         run: |
           tar -C addons/gdmarkdown/bin -cf "${RUNNER_TEMP}/apple-binaries.tar" macos_arm64 ios
 
@@ -241,7 +342,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [quality, build-linux-arm64, build-apple]
+    needs: [quality, build-android, build-linux-arm64, build-apple]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -271,8 +372,19 @@ jobs:
         with:
           go-version: "1.26"
 
+      - name: Cache gdkit and gpm binaries
+        id: cache-go-tools
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: go-tools-${{ runner.os }}-${{ runner.arch }}-gdkit-0.11.0-gpm-0.6.0
+
       - name: Install pinned gpm
-        run: go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          if [[ ! -x "$(go env GOPATH)/bin/gpm" ]]; then
+            go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+          fi
 
       - name: Confirm main has not advanced
         run: |
@@ -287,11 +399,29 @@ jobs:
             exit 1
           fi
 
-      - name: Download built native binaries
+      - name: Download Linux x86_64 binary
         uses: actions/download-artifact@v4
         with:
-          name: binaries-linux-x86_64-android
-          path: addons/gdmarkdown/bin
+          name: binaries-linux-x86_64
+          path: addons/gdmarkdown/bin/linux_x86_64
+
+      - name: Download Android arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-android-arm64
+          path: addons/gdmarkdown/bin/android
+
+      - name: Download Android arm32 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-android-arm32
+          path: addons/gdmarkdown/bin/android
+
+      - name: Download Android x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-android-x86_64
+          path: addons/gdmarkdown/bin/android
 
       - name: Download Linux arm64 binary
         uses: actions/download-artifact@v4
@@ -305,7 +435,7 @@ jobs:
           name: binaries-apple
           path: ${{ runner.temp }}
 
-      - name: Extract Apple binaries preserving symlinks
+      - name: Extract Apple binaries
         run: |
           mkdir -p addons/gdmarkdown/bin
           tar -C addons/gdmarkdown/bin -xf "${RUNNER_TEMP}/apple-binaries.tar"

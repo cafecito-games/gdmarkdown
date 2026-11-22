@@ -4,6 +4,11 @@ import sys
 
 env = SConscript("third_party/godot-cpp/SConstruct")
 
+scons_cache_path = os.environ.get("SCONS_CACHE")
+if scons_cache_path:
+    CacheDir(scons_cache_path)
+    Decider("MD5")
+
 env.Append(CPPPATH=["src", "third_party/md4c"])
 
 # Enforce C++17 for our C++ sources while keeping md4c compiled as C99.

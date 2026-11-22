@@ -10,6 +10,7 @@ export_presets.cfg
 # Native build intermediates and compiled addon binaries
 addons/gdmarkdown/bin/
 native/build/
+native/.scons-cache/
 native/.sconsign.dblite
 native/compile_commands.json
 native/third_party/godot-cpp/bin/

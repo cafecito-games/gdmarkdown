@@ -57,6 +57,11 @@ tasks:
   test:gdscript:
     desc: Run the gdtest integration suite
     cmds:
+      - cmd: |
+          if [ ! -f .godot/extension_list.cfg ]; then
+            mkdir -p .godot
+            printf 'res://addons/gdmarkdown/gdmarkdown.gdextension\n' > .godot/extension_list.cfg
+          fi
       - ./addons/gdtest/gdtest run
 
   test:
