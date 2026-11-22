@@ -4,78 +4,68 @@
 # gdkit:license:end
 
 extends GDTestBenchmark
-## Timings for each stage of the pipeline, separately and together.
+## Benchmarks for native [MarkdownView] parsing and layout using the kitchen-sink
+## fixture at typical and stressed document sizes.
 ##
-## The stages are measured apart because they have different costs and different
-## reasons to regress: block parsing is line-oriented and mostly linear, inline
-## parsing backtracks over delimiter runs, and emission is string building. A
-## full conversion is measured too, since that is what assigning
-## [member MarkdownLabel.markdown] actually costs.
-##
-## Run with [code]task bench[/code]. Timings are informational and never fail a
-## build.
+## Run with [code]./addons/gdtest/gdtest bench[/code]. Timings are informational
+## and never fail a build.
 
 const SOURCE_PATH: String = "res://tests/fixtures/kitchen_sink.md"
-const LARGE_REPEAT_COUNT: int = 25
+const LARGE_REPEAT_COUNT: int = 10
 
 var _source: String = ""
 var _large_source: String = ""
-var _parsed: MarkdownDocument = null
-var _blocks_only: MarkdownDocument = null
-var _style: MarkdownStyle = null
+var _theme: MarkdownTheme = null
+var _view: MarkdownView = null
 
 
+## Loads the benchmark fixture, builds the repeated stress document, and creates
+## a shared [MarkdownView] instance.
 func before_all() -> void:
 	_source = FileAccess.get_file_as_string(SOURCE_PATH)
 	_large_source = _repeat_document(_source, LARGE_REPEAT_COUNT)
-	_style = MarkdownStyle.new()
+	_theme = MarkdownTheme.create_dark()
+	_view = MarkdownView.new()
+	_view.markdown_theme = _theme
+	_view.custom_minimum_size = Vector2(640.0, 0.0)
 
 
-## Reparsed per sample so emission and inline expansion each start from a tree
-## nothing has already mutated.
-func before_sample(_info: GDTestBenchmarkInfo) -> void:
-	_blocks_only = MarkdownBlockParser.parse(_source)
-	_parsed = Markdown.parse(_source)
+## Releases the shared [MarkdownView] after all benchmark cases complete.
+func after_all() -> void:
+	if _view != null:
+		_view.free()
+		_view = null
 
 
-func benchmark_parse_blocks() -> void:
-	var document: MarkdownDocument = MarkdownBlockParser.parse(_source)
-	assert(document != null)
+## Measures full parse and layout time for a single kitchen-sink document.
+func benchmark_parse_and_layout_kitchen_sink() -> void:
+	_view.markdown = _source
+	var minimum_size: Vector2 = _view.get_combined_minimum_size()
+	assert(minimum_size.y > 0.0)
 
 
-func benchmark_expand_inlines() -> void:
-	MarkdownInlineParser.parse_document(_blocks_only)
+## Measures full parse and layout time for a 10x repeated stress document.
+func benchmark_parse_and_layout_large_document() -> void:
+	_view.markdown = _large_source
+	var minimum_size: Vector2 = _view.get_combined_minimum_size()
+	assert(minimum_size.y > 0.0)
 
 
-func benchmark_emit_bbcode() -> void:
-	var bbcode: String = MarkdownBbcodeEmitter.emit(_parsed, _style)
-	assert(not bbcode.is_empty())
+## Measures re-layout cost across a container width reduction and restore cycle.
+func benchmark_relayout_width_change() -> void:
+	_view.markdown = _source
+	_view.custom_minimum_size = Vector2(320.0, 0.0)
+	_view.markdown = _source
+	var narrow_height: float = _view.get_combined_minimum_size().y
+	_view.custom_minimum_size = Vector2(640.0, 0.0)
+	assert(narrow_height > 0.0)
 
 
-func benchmark_full_conversion() -> void:
-	var bbcode: String = Markdown.to_bbcode(_source, _style)
-	assert(not bbcode.is_empty())
-
-
-func benchmark_full_conversion_of_a_large_document() -> void:
-	var bbcode: String = Markdown.to_bbcode(_large_source, _style)
-	assert(not bbcode.is_empty())
-
-
-func benchmark_inline_heavy_paragraph() -> void:
-	var source: String = (
-			"A paragraph with *emphasis*, **strong**, ~~struck~~, `code`, "
-			+ "a [link](https://example.com), an ![image](res://a.png), "
-			+ "https://example.com and &hellip; entities, repeated often. "
-	).repeat(20)
-	var bbcode: String = Markdown.to_bbcode(source, _style)
-	assert(not bbcode.is_empty())
-
-
+## Concatenates [param source] [param times] times separated by blank lines.
 func _repeat_document(source: String, times: int) -> String:
-	var parts: Array[String] = []
-	var index: int = 0
-	while index < times:
-		parts.append(source)
-		index += 1
-	return MarkdownScanner.join("\n\n", parts)
+	var parts: PackedStringArray = PackedStringArray()
+	var resize_error: int = parts.resize(times)
+	assert(resize_error == OK)
+	for index: int in range(times):
+		parts[index] = source
+	return "\n\n".join(parts)

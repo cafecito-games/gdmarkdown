@@ -1,30 +1,27 @@
 #!/usr/bin/env bash
-# Verifies a release cut before it is published.
+# Verifies the gdmarkdown gpm slice packaging contract and archive
+# reproducibility before a release is published.
 #
-#   scripts/verify-package MAJOR.MINOR.PATCH
+#   scripts/verify-package [MAJOR.MINOR.PATCH]
 #
-# Consumers verify every byte against their lock file, so a broken cut fails on
-# their machines rather than on the publisher's. This checks the three things
-# that have actually gone wrong on addons cut this way: a stale version inside
-# the archive, repository files that are not part of the addon reaching the
-# mandatory core slice, and a non-reproducible archive.
+# When every native binary referenced by addons/gdmarkdown/gdmarkdown.gdextension
+# is present on disk (for example, during a full release workflow), this verifies
+# the real addon tree directly. When some cross-platform binaries are absent on
+# the current host (for example, on a single-OS developer machine or single-OS CI
+# job), it synthesizes placeholder binaries for every path declared in the
+# .gdextension so the full multi-platform slice partition and byte-for-byte
+# reproducibility are still verified.
 set -euo pipefail
 
-version="${1:-}"
-if [[ -z "${version}" || $# -ne 1 ]]; then
-	echo "usage: scripts/verify-package MAJOR.MINOR.PATCH" >&2
+version="${1:-0.0.0}"
+if [[ $# -gt 1 ]]; then
+	echo "usage: scripts/verify-package [MAJOR.MINOR.PATCH]" >&2
 	exit 2
 fi
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-work="$(mktemp -d)"
-trap 'rm -rf "${work}"' EXIT
-
-"${repository_root}/scripts/package-addon" --version "${version}" --out "${work}/first" >/dev/null
-"${repository_root}/scripts/package-addon" --version "${version}" --out "${work}/second" >/dev/null
-
-archive="${work}/first/gdmarkdown-${version}-core.zip"
-index="${work}/first/gpm-index.toml"
+addon_directory="${repository_root}/addons/gdmarkdown"
+gdextension_file="${addon_directory}/gdmarkdown.gdextension"
 
 failures=0
 fail() {
@@ -32,52 +29,165 @@ fail() {
 	failures=$((failures + 1))
 }
 
-echo "Verifying gdmarkdown ${version}"
+command -v gpm >/dev/null 2>&1 || {
+	echo "gpm is not installed: brew install cafecito-games/tap/gpm" >&2
+	exit 1
+}
 
-# The index must declare the mandatory core slice and this version.
-if [[ ! -f "${index}" ]]; then
-	fail "no gpm-index.toml was written"
-elif ! grep -q "^version = \"${version}\"$" "${index}"; then
-	fail "the index does not declare version ${version}"
-elif ! grep -q '^\s*\[slices.core\]$' "${index}"; then
-	fail "the index declares no core slice"
+work_directory="$(mktemp -d)"
+trap 'rm -rf "${work_directory}"' EXIT
+
+referenced_paths="$(grep -oE 'res://addons/gdmarkdown/[^"]+' "${gdextension_file}" | sort -u)"
+if [[ -z "${referenced_paths}" ]]; then
+	echo "FAIL: no res:// artifact paths found in ${gdextension_file}" >&2
+	exit 1
 fi
 
-# A pure-GDScript addon publishes core and nothing else.
-slice_count="$(grep -c '^\s*\[slices\.' "${index}" || true)"
-if [[ "${slice_count}" != "1" ]]; then
-	fail "expected exactly one slice, found ${slice_count}"
-fi
+all_real_binaries_present="true"
+while IFS= read -r resource_path; do
+	relative_path="${resource_path#res://addons/gdmarkdown/}"
+	if [[ ! -e "${addon_directory}/${relative_path}" ]]; then
+		all_real_binaries_present="false"
+		break
+	fi
+done <<<"${referenced_paths}"
 
-if [[ ! -f "${archive}" ]]; then
-	fail "no core archive was written"
+if [[ "${all_real_binaries_present}" == "true" ]]; then
+	echo "Verifying gdmarkdown ${version} (real native artifacts)"
 else
-	listing="$(unzip -Z1 "${archive}")"
+	echo "Verifying gdmarkdown ${version} (synthesized platform placeholders)"
+	synthesized_source="${work_directory}/addon-source"
+	cp -R "${addon_directory}" "${synthesized_source}"
+	while IFS= read -r resource_path; do
+		relative_path="${resource_path#res://addons/gdmarkdown/}"
+		target_path="${synthesized_source}/${relative_path}"
+		if [[ -e "${target_path}" ]]; then
+			continue
+		fi
+		case "${relative_path}" in
+			*.framework | *.xcframework)
+				mkdir -p "${target_path}"
+				printf 'placeholder\n' >"${target_path}/placeholder"
+				;;
+			*)
+				mkdir -p "$(dirname "${target_path}")"
+				printf 'placeholder\n' >"${target_path}"
+				;;
+		esac
+	done <<<"${referenced_paths}"
+	export GDMARKDOWN_ADDON_SRC="${synthesized_source}"
+fi
 
-	# The injected version must be the one inside the shipped plugin.cfg.
-	packaged_config="$(unzip -p "${archive}" plugin.cfg)"
+"${repository_root}/scripts/package-addon" --version "${version}" --out "${work_directory}/first" >/dev/null
+"${repository_root}/scripts/package-addon" --version "${version}" --out "${work_directory}/second" >/dev/null
+
+index_file="${work_directory}/first/gpm-index.toml"
+
+if [[ ! -f "${index_file}" ]]; then
+	fail "no gpm-index.toml was written"
+else
+	if ! grep -qE '^format[[:space:]]*=[[:space:]]*1$' "${index_file}"; then
+		fail "the index must declare format = 1"
+	fi
+	if ! grep -q "^version = \"${version}\"$" "${index_file}"; then
+		fail "the index does not declare version ${version}"
+	fi
+fi
+
+expected_slices=(
+	core
+	ios
+	macos.arm64
+	android.arm64
+	android.arm32
+	android.x86_64
+	linux.x86_64
+	linux.arm64
+)
+
+slice_count="$(grep -cE '^[[:space:]]*\[slices\.([A-Za-z0-9_-]+|"[^"]+")\]$' "${index_file}" || true)"
+if [[ "${slice_count}" != "${#expected_slices[@]}" ]]; then
+	fail "expected ${#expected_slices[@]} slices in gpm-index.toml, found ${slice_count}"
+fi
+
+listing_for_slice() {
+	local slice="$1"
+	local cache_file="${work_directory}/listing-${slice}.txt"
+	if [[ ! -f "${cache_file}" ]]; then
+		unzip -Z1 "${work_directory}/first/gdmarkdown-${version}-${slice}.zip" >"${cache_file}"
+	fi
+	cat "${cache_file}"
+}
+
+assert_in_slice() {
+	local slice="$1"
+	local expected_path="$2"
+	local entries
+	entries="$(listing_for_slice "${slice}")"
+	if ! grep -qF "${expected_path}" <<<"${entries}"; then
+		fail "slice \"${slice}\" is missing ${expected_path}"
+	fi
+}
+
+assert_not_in_slice() {
+	local slice="$1"
+	local forbidden_path="$2"
+	local entries
+	entries="$(listing_for_slice "${slice}")"
+	if grep -qF "${forbidden_path}" <<<"${entries}"; then
+		fail "slice \"${slice}\" must not carry ${forbidden_path}"
+	fi
+}
+
+for slice in "${expected_slices[@]}"; do
+	archive="${work_directory}/first/gdmarkdown-${version}-${slice}.zip"
+	if [[ ! -s "${archive}" ]]; then
+		fail "missing slice archive: ${archive}"
+	fi
+done
+
+core_archive="${work_directory}/first/gdmarkdown-${version}-core.zip"
+if [[ -s "${core_archive}" ]]; then
+	core_listing="$(listing_for_slice core)"
+
+	packaged_config="$(unzip -p "${core_archive}" plugin.cfg)"
 	if ! grep -q "^version=\"${version}\"$" <<<"${packaged_config}"; then
 		fail "the packaged plugin.cfg does not declare version ${version}"
 	fi
 
-	# Nothing outside the addon may reach the slice every consumer downloads.
+	packaged_gdextension="$(unzip -p "${core_archive}" gdmarkdown.gdextension)"
+	if grep -qE '^(android|ios|linux|macos|web|windows)[.[:space:]=]' <<<"${packaged_gdextension}"; then
+		fail "the core gdmarkdown.gdextension body must carry no platform-tagged entries"
+	fi
+
 	while IFS= read -r entry; do
 		case "${entry}" in
-			demo/* | tests/* | docs/* | scripts/* | packaging/* | .git/* | *.import.md)
-				fail "non-addon file in the core slice: ${entry}"
+			demo/* | tests/* | docs/* | scripts/* | packaging/* | native/* | .git/* | bin/*)
+				fail "non-core file in the core slice: ${entry}"
 				;;
 		esac
-	done <<<"${listing}"
+	done <<<"${core_listing}"
 
-	for required in plugin.cfg markdown.gd markdown_label.gd markdown_style.gd; do
-		if ! grep -qx "${required}" <<<"${listing}"; then
-			fail "missing from the core slice: ${required}"
+	for required_entry in plugin.cfg plugin.gd gdmarkdown.gdextension; do
+		if ! grep -qx "${required_entry}" <<<"${core_listing}"; then
+			fail "missing from the core slice: ${required_entry}"
 		fi
 	done
 fi
 
-# Two cuts of an unchanged tree must be byte-identical.
-if ! diff -r "${work}/first" "${work}/second" >/dev/null 2>&1; then
+assert_in_slice ios "bin/ios/gdmarkdown.xcframework/"
+assert_in_slice macos.arm64 "bin/macos_arm64/gdmarkdown.framework/"
+assert_in_slice android.arm64 "bin/android/libgdmarkdown.android.release.arm64.so"
+assert_in_slice android.arm32 "bin/android/libgdmarkdown.android.release.arm32.so"
+assert_in_slice android.x86_64 "bin/android/libgdmarkdown.android.release.x86_64.so"
+assert_in_slice linux.x86_64 "bin/linux_x86_64/libgdmarkdown.so"
+assert_in_slice linux.arm64 "bin/linux_arm64/libgdmarkdown.so"
+
+assert_not_in_slice core "bin/"
+assert_not_in_slice linux.x86_64 "bin/linux_arm64/"
+assert_not_in_slice android.arm64 "libgdmarkdown.android.release.arm32.so"
+
+if ! diff -r "${work_directory}/first" "${work_directory}/second" >/dev/null 2>&1; then
 	fail "the cut is not reproducible; two runs differed"
 fi
 
@@ -86,4 +196,4 @@ if [[ "${failures}" -ne 0 ]]; then
 	exit 1
 fi
 
-echo "  ok  core slice only, version ${version}, reproducible"
+echo "  ok  ${#expected_slices[@]} slices verified, version ${version}, reproducible"

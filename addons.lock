@@ -1,12 +1,12 @@
 [addons]
   [addons.gdtest]
-    resolved_version = "v0.4.1"
+    resolved_version = "v0.4.3"
     source_path = ""
-    spec_hash = "74165e855f51baa2f528115a6a886339a27ce621ff9159f0aad58a07c4140127"
-    index_sha256 = "a7c4d01b55b00d08a3efea81b33dbccaadde47a83bae402124f0b8eb4957126f"
+    spec_hash = "ec7aa6b427ba3347618ec7ff31cfdb82537f312822cb2a13e8fbd524b5cadf74"
+    index_sha256 = "67b815300f533ee025bc074fef901441f0da8047ee59ac625ba3c70161fa837c"
     [addons.gdtest.slices]
-      core = "11fb9ea30ffa50931565f2d4bda4b6b69eff183294ed29e6108f08792f059735"
-      "linux.arm64" = "439be728292561c348c6d5ada5da732e44b64e8ac0cdfbf8025b84f332fadfd0"
-      "linux.x86_64" = "6ac5254de06a99ce45c0e3ddefb47e35f47c8efc458a404c6c1cb3ac06d183c0"
-      "macos.arm64" = "da4a77e550eb722a8935a915fde764d9313dcb7c5e6dee28a95c4a43c2f19100"
-      "macos.x86_64" = "0c1aee94a6b199994584c26dd9b7229592dce1051b97fdd7f3f80f4a138035cd"
+      core = "692223bf1a513daa07d908650392505b656e71cde328283595f8ae3906adcc1b"
+      "linux.arm64" = "b6f8acd105aa24c95d02ea629065332ece58364d9fd0cc8d96d703c33c0f46ba"
+      "linux.x86_64" = "23f0f734663a392ff3ce99998ebe62e99eb1e5a1419d2aedc6373468f0eae116"
+      "macos.arm64" = "1c601d38d7c29f032b243c7a922f76f72bb179056b175841392b2304ae821879"
+      "macos.x86_64" = "8de3ec5183abbe30390c0c56a73e6e948a1db4a7e30a3ed2e3c682e52d4cf84c"

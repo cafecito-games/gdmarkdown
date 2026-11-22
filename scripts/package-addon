@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
-# Cuts a gpm release archive for the gdmarkdown addon.
+# Partition the shippable gdmarkdown addon into gpm platform slices.
 #
-#   scripts/package-addon [--version MAJOR.MINOR.PATCH] [--out DIRECTORY]
+# Produces, in the output directory, one zip per slice plus gpm-index.toml. A
+# GitHub release carrying those assets is discovered as sliced by gpm with no
+# manifest change on the consumer's side, so a project downloads only the
+# platforms it targets instead of the whole addon.
 #
-# Packages from a staged copy of addons/gdmarkdown rather than from the working
-# tree, so nothing outside the shipped addon can reach the core slice.
+# Usage: scripts/package-addon [--version MAJOR.MINOR.PATCH] [--out DIRECTORY] [--allow-partial]
 #
 # --version injects the version into the staged plugin.cfg and into the index,
 # so a release never depends on the committed plugin.cfg being current. Without
-# it the committed plugin.cfg value is used, which is what a local test cut
-# wants.
+# it the committed plugin.cfg value is used.
+#
+# --allow-partial prunes unbuilt platform libraries from the staged .gdextension
+# and skips the all-slices completeness assertion, enabling single-platform
+# developer or CI test cuts without building every target OS.
 set -euo pipefail
 
 readonly MINIMUM_GPM_VERSION="0.6.0"
@@ -17,6 +22,12 @@ readonly MINIMUM_GPM_VERSION="0.6.0"
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 output_directory="${repository_root}/dist"
 version=""
+allow_partial="false"
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -28,61 +39,123 @@ while [[ $# -gt 0 ]]; do
 			output_directory="${2:-}"
 			shift 2
 			;;
+		--allow-partial)
+			allow_partial="true"
+			shift
+			;;
 		*)
-			echo "usage: scripts/package-addon [--version X.Y.Z] [--out DIRECTORY]" >&2
+			echo "usage: scripts/package-addon [--version X.Y.Z] [--out DIRECTORY] [--allow-partial]" >&2
 			exit 2
 			;;
 	esac
 done
 
-if ! command -v gpm >/dev/null 2>&1; then
-	echo "gpm is not installed: brew install cafecito-games/tap/gpm" >&2
-	exit 1
-fi
+command -v gpm >/dev/null 2>&1 || fail "gpm is not installed: brew install cafecito-games/tap/gpm"
 
-installed_version="$(gpm --version | awk '{print $3}')"
-if [[ "$(printf '%s\n%s\n' "${MINIMUM_GPM_VERSION}" "${installed_version}" | sort -V | head -n1)" != "${MINIMUM_GPM_VERSION}" ]]; then
-	echo "gpm ${MINIMUM_GPM_VERSION} or newer is required, found ${installed_version}" >&2
-	exit 1
-fi
-
-if [[ -z "${version}" ]]; then
-	version="$(sed -n 's/^version="\(.*\)"$/\1/p' "${repository_root}/addons/gdmarkdown/plugin.cfg")"
-	if [[ -z "${version}" ]]; then
-		echo "could not read version from addons/gdmarkdown/plugin.cfg" >&2
-		exit 1
+raw_gpm_version="$(gpm --version)"
+installed_version="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' <<<"${raw_gpm_version}" | head -n 1 || true)"
+if [[ -n "${installed_version}" ]]; then
+	if [[ "$(printf '%s\n%s\n' "${MINIMUM_GPM_VERSION}" "${installed_version}" | sort -V | head -n 1)" != "${MINIMUM_GPM_VERSION}" ]]; then
+		fail "gpm ${MINIMUM_GPM_VERSION} or newer is required, found ${installed_version}"
 	fi
 fi
-if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-	echo "version '${version}' is not strict MAJOR.MINOR.PATCH" >&2
-	exit 1
+
+addon_source="${GDMARKDOWN_ADDON_SRC:-${repository_root}/addons/gdmarkdown}"
+if [[ -z "${version}" ]]; then
+	version="$(sed -n 's/^version="\(.*\)"$/\1/p' "${addon_source}/plugin.cfg")"
+	[[ -n "${version}" ]] || fail "could not read version from ${addon_source}/plugin.cfg"
 fi
+if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+	fail "version '${version}' is not strict MAJOR.MINOR.PATCH"
+fi
+
+mkdir -p "${output_directory}"
+output_directory="$(cd "${output_directory}" && pwd)"
 
 staging_directory="$(mktemp -d)"
 trap 'rm -rf "${staging_directory}"' EXIT
 
-mkdir -p "${staging_directory}/addons"
-cp -R "${repository_root}/addons/gdmarkdown" "${staging_directory}/addons/gdmarkdown"
+"${repository_root}/scripts/stage-addon-tree" "${staging_directory}" --version "${version}" >/dev/null
 cp "${repository_root}/packaging/gpm-package.toml" "${staging_directory}/gpm-package.toml"
 
-staged_config="${staging_directory}/addons/gdmarkdown/plugin.cfg"
-python3 - "${staged_config}" "${version}" <<'PYTHON'
+if [[ "${allow_partial}" == "true" ]]; then
+	python3 - "${staging_directory}/addons/gdmarkdown" <<'PYTHON'
 import pathlib
+import re
 import sys
 
-config, version = pathlib.Path(sys.argv[1]), sys.argv[2]
-lines = []
-replaced = False
-for line in config.read_text().splitlines(keepends=True):
-    if line.startswith('version="'):
-        line = 'version="%s"\n' % version
-        replaced = True
-    lines.append(line)
-if not replaced:
-    raise SystemExit("no version key in %s" % config)
-config.write_text("".join(lines))
+addon_directory = pathlib.Path(sys.argv[1])
+gdextension = addon_directory / "gdmarkdown.gdextension"
+library_pattern = re.compile(r'^\s*[^#;\s][^=]*=\s*"res://addons/gdmarkdown/([^"]+)"\s*$')
+
+in_libraries = False
+kept_lines = []
+for line in gdextension.read_text().splitlines(keepends=True):
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        in_libraries = stripped == "[libraries]"
+        kept_lines.append(line)
+        continue
+    if in_libraries:
+        match = library_pattern.match(line)
+        if match:
+            relative_path = match.group(1)
+            if not (addon_directory / relative_path).exists():
+                continue
+    kept_lines.append(line)
+
+gdextension.write_text("".join(kept_lines))
 PYTHON
+fi
 
 gpm package --dir "${staging_directory}" --out "${output_directory}" --version "${version}"
+
+index_file="${output_directory}/gpm-index.toml"
+[[ -f "${index_file}" ]] || fail "gpm package wrote no index at ${index_file}"
+
+if [[ "${allow_partial}" == "true" ]]; then
+	required_slices=(core)
+else
+	required_slices=(
+		core
+		ios
+		macos.arm64
+		android.arm64
+		android.arm32
+		android.x86_64
+		linux.x86_64
+		linux.arm64
+	)
+fi
+
+for slice in "${required_slices[@]}"; do
+	escaped_slice="${slice//./\\.}"
+	grep -qE "^[[:space:]]*\[slices\.\"?${escaped_slice}\"?\]" "${index_file}" \
+		|| fail "index publishes no \"${slice}\" slice; build every native artifact before packaging (or pass --allow-partial for a local test cut)"
+	archive="${output_directory}/gdmarkdown-${version}-${slice}.zip"
+	[[ -s "${archive}" ]] || fail "slice \"${slice}\" has no archive at ${archive}"
+done
+
+# Everything no .gdextension key claims lands in core, which every consumer
+# downloads on every platform. Materialize the listing first so grep -q closing
+# the pipe early cannot surface SIGPIPE under set -o pipefail.
+core_listing="$(unzip -Z1 "${output_directory}/gdmarkdown-${version}-core.zip")"
+while IFS= read -r pattern; do
+	[[ -n "${pattern}" ]] || continue
+	if grep -qE "${pattern}" <<<"${core_listing}"; then
+		matched="$(grep -E "${pattern}" <<<"${core_listing}" | head -n 3)"
+		fail "core slice carries platform-specific or build-time files matching /${pattern}/:"$'\n'"${matched}"
+	fi
+done <<'PATTERNS'
+(^|/)native/
+\.xcframework(/|$)
+\.framework(/|$)
+\.so$
+\.dylib$
+\.a$
+\.dll$
+(^|/)\.gitkeep$
+(^|/)\.DS_Store$
+PATTERNS
 
 echo "Packaged gdmarkdown ${version} into ${output_directory}"

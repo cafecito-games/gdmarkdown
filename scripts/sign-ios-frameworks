@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+# Code-sign the built iOS xcframeworks and every framework slice inside them.
+#
+# The slices are signed before the wrapper. A wrapper signature seals the files
+# under each slice, including the slice's own _CodeSignature, so signing a slice
+# afterwards leaves the wrapper sealing content that no longer exists as sealed.
+#
+# Verification is per slice because `codesign --verify --deep --strict` on the
+# wrapper alone can pass even when an inner slice is unsigned.
+#
+# Usage: scripts/sign-ios-frameworks <xcframework> [<xcframework> ...]
+#
+# The identity comes from GDMARKDOWN_SIGNING_IDENTITY. When that variable is not
+# set at all, nothing is signed and the script succeeds so local builds without
+# an Apple distribution certificate keep working. When it is set, every signing
+# and verification failure is fatal.
+set -euo pipefail
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+
+if [[ $# -eq 0 ]]; then
+	echo "usage: scripts/sign-ios-frameworks <xcframework> [<xcframework> ...]" >&2
+	exit 2
+fi
+
+for xcframework in "$@"; do
+	[[ -d "${xcframework}" ]] || fail "xcframework does not exist: ${xcframework}"
+	case "${xcframework}" in
+		*.xcframework) ;;
+		*) fail "not an xcframework: ${xcframework}" ;;
+	esac
+done
+
+if [[ -z "${GDMARKDOWN_SIGNING_IDENTITY+set}" ]]; then
+	echo "GDMARKDOWN_SIGNING_IDENTITY is not set; leaving the iOS frameworks unsigned."
+	echo "Set GDMARKDOWN_SIGNING_IDENTITY for App Store distribution releases."
+	exit 0
+fi
+
+identity="${GDMARKDOWN_SIGNING_IDENTITY}"
+if [[ -z "${identity}" ]]; then
+	fail "GDMARKDOWN_SIGNING_IDENTITY is set but empty; unset it to skip signing deliberately"
+fi
+
+command -v xcrun >/dev/null 2>&1 || fail "xcrun is not on PATH; signing needs the Xcode command line tools"
+
+for xcframework in "$@"; do
+	slices=()
+	while IFS= read -r slice; do
+		slices+=("${slice}")
+	done < <(find "${xcframework}" -mindepth 2 -maxdepth 2 -type d -name '*.framework' | sort)
+
+	[[ "${#slices[@]}" -gt 0 ]] || fail "${xcframework} contains no framework slices to sign"
+
+	# --force is required: a slice built locally carries an ad-hoc signature,
+	# and codesign refuses to replace an existing signature without --force.
+	for slice in "${slices[@]}"; do
+		xcrun codesign --force --timestamp --sign "${identity}" "${slice}" \
+			|| fail "could not sign slice ${slice}"
+		xcrun codesign --verify --strict "${slice}" \
+			|| fail "slice ${slice} does not verify after signing"
+		echo "signed ${slice}"
+	done
+
+	xcrun codesign --force --timestamp --sign "${identity}" "${xcframework}" \
+		|| fail "could not sign ${xcframework}"
+	xcrun codesign --verify --strict "${xcframework}" \
+		|| fail "${xcframework} does not verify after signing"
+	echo "signed ${xcframework} (${#slices[@]} slice(s))"
+done

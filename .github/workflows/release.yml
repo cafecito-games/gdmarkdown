@@ -22,7 +22,10 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/native/.scons-cache
     outputs:
       tag: ${{ steps.release-version.outputs.tag }}
       version: ${{ steps.release-version.outputs.version }}
@@ -30,6 +33,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - name: Require the main branch
         run: |
@@ -71,26 +75,66 @@ jobs:
       - name: Require changelog entries for the release
         run: scripts/release-notes-present
 
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential scons libfontconfig1
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
 
+      - name: Cache gdkit and gpm binaries
+        id: cache-go-tools
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: go-tools-${{ runner.os }}-${{ runner.arch }}-gdkit-0.11.0-gpm-0.6.0
+
       - name: Install pinned gdkit and gpm
         run: |
-          go install github.com/cafecito-games/gdkit/cmd/gdkit@v0.11.0
-          go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
-          # gdkit's version string is the contract the checks below rely on;
-          # `license` only exists from 0.11.0, so assert rather than discover it
-          # halfway through a run.
-          gdkit_version=$(gdkit --version)
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          if [[ "${{ steps.cache-go-tools.outputs.cache-hit }}" != "true" ]]; then
+            go install github.com/cafecito-games/gdkit/cmd/gdkit@v0.11.0
+            go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+          fi
+          gdkit_version=$("$(go env GOPATH)/bin/gdkit" --version)
           [[ "$gdkit_version" == "gdkit version 0.11.0"* ]]
+
+      - name: Cache pinned Godot 4.7.2
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/godot-ci/4.7.2-stable
+          key: godot-4.7.2-stable-${{ runner.os }}-${{ runner.arch }}
 
       - name: Install pinned Godot 4.7.2
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libfontconfig1
-          scripts/install-godot-linux-ci "$RUNNER_TEMP/godot-bin/godot"
-          echo "$RUNNER_TEMP/godot-bin" >> "$GITHUB_PATH"
+          godot_dir="$HOME/.cache/godot-ci/4.7.2-stable"
+          if [[ ! -x "$godot_dir/godot" ]]; then
+            scripts/install-godot-linux-ci "$godot_dir/godot"
+          fi
+          echo "$godot_dir" >> "$GITHUB_PATH"
+
+      - name: Cache godot-cpp and SCons objects (linux x86_64)
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/.scons-cache
+            native/third_party/godot-cpp/bin
+            native/third_party/godot-cpp/gen
+          key: scons-linux-x86_64-${{ hashFiles('.gitmodules', 'native/SConstruct', 'native/third_party/godot-cpp/SConstruct', 'native/third_party/godot-cpp/gdextension/extension_api.json') }}
+          restore-keys: |
+            scons-linux-x86_64-
+
+      - name: Run C++ unit tests
+        run: scripts/build-native test-native
+
+      - name: Build Linux x86_64 native library
+        run: scripts/build-native linux x86_64
+
+      - name: Check Linux GDExtension load
+        run: scripts/test-gdextension-load
 
       - name: Check formatting, lint rules, license headers and uid:// sidecars
         run: |
@@ -102,12 +146,211 @@ jobs:
       - name: Install pinned addons
         run: gpm install --host-only
 
-      - name: Run tests
+      - name: Pre-register GDExtension for headless project bootstrap
+        run: |
+          mkdir -p .godot
+          printf 'res://addons/gdmarkdown/gdmarkdown.gdextension\n' > .godot/extension_list.cfg
+
+      - name: Run GDScript integration tests
         run: ./addons/gdtest/gdtest run --no-daemon
 
-  publish:
+      - name: Upload Linux x86_64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-linux-x86_64
+          path: addons/gdmarkdown/bin/linux_x86_64/libgdmarkdown.so
+          if-no-files-found: error
+
+  build-android:
     needs: quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, arm32, x86_64]
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/native/.scons-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install SCons
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq scons
+
+      - name: Cache godot-cpp and SCons objects (android ${{ matrix.arch }})
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/.scons-cache
+            native/third_party/godot-cpp/bin
+            native/third_party/godot-cpp/gen
+          key: scons-android-${{ matrix.arch }}-${{ hashFiles('.gitmodules', 'native/SConstruct', 'native/third_party/godot-cpp/SConstruct', 'native/third_party/godot-cpp/gdextension/extension_api.json') }}
+          restore-keys: |
+            scons-android-${{ matrix.arch }}-
+
+      - name: Build Android (${{ matrix.arch }}) native library
+        run: scripts/build-native android ${{ matrix.arch }}
+
+      - name: Upload Android (${{ matrix.arch }}) binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-android-${{ matrix.arch }}
+          path: addons/gdmarkdown/bin/android/libgdmarkdown.android.release.${{ matrix.arch }}.so
+          if-no-files-found: error
+
+  build-linux-arm64:
+    needs: quality
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    env:
+      SCONS_CACHE: ${{ github.workspace }}/native/.scons-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential scons
+
+      - name: Cache godot-cpp and SCons objects (linux arm64)
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/.scons-cache
+            native/third_party/godot-cpp/bin
+            native/third_party/godot-cpp/gen
+          key: scons-linux-arm64-${{ hashFiles('.gitmodules', 'native/SConstruct', 'native/third_party/godot-cpp/SConstruct', 'native/third_party/godot-cpp/gdextension/extension_api.json') }}
+          restore-keys: |
+            scons-linux-arm64-
+
+      - name: Build Linux arm64 native library
+        run: scripts/build-native linux arm64
+
+      - name: Upload Linux arm64 binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-linux-arm64
+          path: addons/gdmarkdown/bin/linux_arm64/libgdmarkdown.so
+          if-no-files-found: error
+
+  build-apple:
+    needs: quality
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      SCONS_CACHE: ${{ github.workspace }}/native/.scons-cache
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install SCons
+        run: brew install scons
+
+      - name: Cache godot-cpp and SCons objects (apple)
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/.scons-cache
+            native/third_party/godot-cpp/bin
+            native/third_party/godot-cpp/gen
+          key: scons-apple-${{ hashFiles('.gitmodules', 'native/SConstruct', 'native/third_party/godot-cpp/SConstruct', 'native/third_party/godot-cpp/gdextension/extension_api.json') }}
+          restore-keys: |
+            scons-apple-
+
+      - name: Require Apple distribution signing secrets
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERT_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [[ -n "${CERTIFICATE_BASE64}" ]] || missing="${missing} APPLE_DISTRIBUTION_CERT_P12_BASE64"
+          [[ -n "${CERTIFICATE_PASSWORD}" ]] || missing="${missing} APPLE_DISTRIBUTION_CERT_PASSWORD"
+          [[ -n "${KEYCHAIN_PASSWORD}" ]] || missing="${missing} KEYCHAIN_PASSWORD"
+          if [[ -n "${missing}" ]]; then
+            echo "::error::Missing required Apple distribution signing secret(s):${missing}"
+            exit 1
+          fi
+
+      - name: Import Apple distribution signing certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.APPLE_DISTRIBUTION_CERT_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          keychain="${RUNNER_TEMP}/gdmarkdown-signing.keychain-db"
+          certificate="${RUNNER_TEMP}/apple-distribution.p12"
+          printf '%s' "${CERTIFICATE_BASE64}" | base64 --decode > "${certificate}"
+          security create-keychain -p "${KEYCHAIN_PASSWORD}" "${keychain}"
+          security set-keychain-settings -lut 21600 "${keychain}"
+          security unlock-keychain -p "${KEYCHAIN_PASSWORD}" "${keychain}"
+          security import "${certificate}" -k "${keychain}" -P "${CERTIFICATE_PASSWORD}" \
+            -f pkcs12 -A -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "${KEYCHAIN_PASSWORD}" "${keychain}" > /dev/null
+          existing_keychains=()
+          while IFS= read -r existing_keychain; do
+            existing_keychain="${existing_keychain#"${existing_keychain%%[![:space:]]*}"}"
+            existing_keychain="${existing_keychain%\"}"
+            existing_keychain="${existing_keychain#\"}"
+            [[ -n "${existing_keychain}" ]] && existing_keychains+=("${existing_keychain}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${keychain}" "${existing_keychains[@]}"
+          rm -f "${certificate}"
+          identity="$(security find-identity -v -p codesigning "${keychain}" \
+            | awk '/Apple Distribution/ { print $2; exit }')"
+          if [[ -z "${identity}" ]]; then
+            echo "::error::The imported certificate holds no Apple Distribution codesigning identity."
+            security find-identity -v -p codesigning "${keychain}" >&2
+            exit 1
+          fi
+          echo "GDMARKDOWN_SIGNING_IDENTITY=${identity}" >> "${GITHUB_ENV}"
+
+      - name: Build and sign macOS and iOS frameworks
+        env:
+          GDMARKDOWN_VERSION: ${{ needs.quality.outputs.version }}
+        run: |
+          scripts/build-native macos
+          scripts/build-native ios
+
+      - name: Verify iOS XCFramework signatures
+        run: |
+          set -euo pipefail
+          xcframework="addons/gdmarkdown/bin/ios/gdmarkdown.xcframework"
+          xcrun codesign --verify --strict "${xcframework}"
+          while IFS= read -r slice; do
+            xcrun codesign --verify --strict "${slice}"
+          done < <(find "${xcframework}" -mindepth 2 -maxdepth 2 -type d -name '*.framework' | sort)
+
+      - name: Remove signing keychain
+        if: always()
+        run: security delete-keychain "${RUNNER_TEMP}/gdmarkdown-signing.keychain-db" || true
+
+      - name: Archive Apple frameworks
+        run: |
+          tar -C addons/gdmarkdown/bin -cf "${RUNNER_TEMP}/apple-binaries.tar" macos_arm64 ios
+
+      - name: Upload Apple binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-apple
+          path: ${{ runner.temp }}/apple-binaries.tar
+          if-no-files-found: error
+
+  publish:
+    needs: [quality, build-android, build-linux-arm64, build-apple]
+    runs-on: ubuntu-22.04
     permissions:
       contents: write
       pull-requests: write
@@ -129,14 +372,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          submodules: recursive
           token: ${{ steps.app-token.outputs.token }}
 
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26"
 
+      - name: Cache gdkit and gpm binaries
+        id: cache-go-tools
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: go-tools-${{ runner.os }}-${{ runner.arch }}-gdkit-0.11.0-gpm-0.6.0
+
       - name: Install pinned gpm
-        run: go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          if [[ ! -x "$(go env GOPATH)/bin/gpm" ]]; then
+            go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
+          fi
 
       - name: Confirm main has not advanced
         run: |
@@ -151,13 +406,50 @@ jobs:
             exit 1
           fi
 
+      - name: Download Linux x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-linux-x86_64
+          path: addons/gdmarkdown/bin/linux_x86_64
+
+      - name: Download Android arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-android-arm64
+          path: addons/gdmarkdown/bin/android
+
+      - name: Download Android arm32 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-android-arm32
+          path: addons/gdmarkdown/bin/android
+
+      - name: Download Android x86_64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-android-x86_64
+          path: addons/gdmarkdown/bin/android
+
+      - name: Download Linux arm64 binary
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-linux-arm64
+          path: addons/gdmarkdown/bin/linux_arm64
+
+      - name: Download Apple binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries-apple
+          path: ${{ runner.temp }}
+
+      - name: Extract Apple binaries
+        run: |
+          mkdir -p addons/gdmarkdown/bin
+          tar -C addons/gdmarkdown/bin -xf "${RUNNER_TEMP}/apple-binaries.tar"
+
       - name: Inject the version into plugin.cfg and the changelog
         run: scripts/set-version "$RELEASE_VERSION"
 
-      # The version-bearing files are allowed to move, not required to. A
-      # release whose number already matches the committed plugin.cfg, as the
-      # first one does, leaves that file untouched; what matters is that no
-      # other file changed and that both files end up carrying the version.
       - name: Confirm only the version-bearing files changed
         run: |
           set -euo pipefail
@@ -180,11 +472,15 @@ jobs:
             exit 1
           fi
 
-      - name: Build and verify the release package
+      - name: Build and verify the release packages
         run: |
           set -euo pipefail
-          scripts/package-addon --version "$RELEASE_VERSION"
+          scripts/package-addon --version "$RELEASE_VERSION" --out dist
           scripts/verify-package "$RELEASE_VERSION"
+          staging_directory="$(mktemp -d)"
+          trap 'rm -rf "${staging_directory}"' EXIT
+          scripts/stage-addon-tree "${staging_directory}" --version "$RELEASE_VERSION"
+          (cd "${staging_directory}" && zip -r -y "${GITHUB_WORKSPACE}/dist/gdmarkdown-v${RELEASE_VERSION}.zip" addons/)
 
       - name: Write the release notes
         run: scripts/release-notes "$RELEASE_VERSION" > "$RUNNER_TEMP/notes.md"
@@ -195,10 +491,6 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-      # The bump is committed to an ephemeral branch rather than to main, so
-      # main keeps its protection with no bypass actor. The tag points at that
-      # commit, so the release source archive already carries the bumped
-      # plugin.cfg before the pull request merges.
       - name: Create the release branch and tag
         run: |
           set -euo pipefail
@@ -208,8 +500,6 @@ jobs:
           git add CHANGELOG.md addons/gdmarkdown/plugin.cfg
           git commit -m "Release $RELEASE_TAG"
           git tag "$RELEASE_TAG"
-          # The release branch is ephemeral and version-specific; force-push so
-          # a rerun after a partial failure is not blocked by a stale remote.
           git push --force origin "$RELEASE_BRANCH"
           git push origin "$RELEASE_TAG"
 

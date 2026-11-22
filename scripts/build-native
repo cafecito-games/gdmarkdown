@@ -1,0 +1,415 @@
+#!/usr/bin/env bash
+# Build native gdmarkdown GDExtension binaries and run native C++ unit tests.
+#
+# Usage:
+#   scripts/build-native macos
+#   scripts/build-native ios
+#   scripts/build-native android [arm64|arm32|x86_64|all]
+#   scripts/build-native linux [x86_64|arm64|all]
+#   scripts/build-native test-native
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+native_directory="${repository_root}/native"
+addon_binary_directory="${repository_root}/addons/gdmarkdown/bin"
+plugin_config="${repository_root}/addons/gdmarkdown/plugin.cfg"
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+
+detect_job_count() {
+	if command -v nproc >/dev/null 2>&1; then
+		nproc
+	elif command -v sysctl >/dev/null 2>&1; then
+		sysctl -n hw.ncpu
+	else
+		echo "4"
+	fi
+}
+
+read_addon_version() {
+	local version="${GDMARKDOWN_VERSION:-}"
+	if [[ -n "${version}" ]]; then
+		if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+			fail "GDMARKDOWN_VERSION '${version}' is not strict MAJOR.MINOR.PATCH"
+		fi
+		printf '%s\n' "${version}"
+		return
+	fi
+	if [[ -f "${plugin_config}" ]]; then
+		version="$(sed -n 's/^version="\(.*\)"$/\1/p' "${plugin_config}")"
+	fi
+	if [[ -z "${version}" ]]; then
+		version="2.0.0"
+	fi
+	printf '%s\n' "${version}"
+}
+
+require_command() {
+	local command_name="$1"
+	local hint="$2"
+	command -v "${command_name}" >/dev/null 2>&1 || fail "${command_name} is not installed (${hint})"
+}
+
+write_macos_info_plist() {
+	local destination_plist="$1"
+	local bundle_version="$2"
+	cat >"${destination_plist}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>gdmarkdown</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.cafecitogames.gdmarkdown</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>gdmarkdown</string>
+	<key>CFBundlePackageType</key>
+	<string>FMWK</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${bundle_version}</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
+</dict>
+</plist>
+EOF
+}
+
+write_ios_info_plist() {
+	local destination_plist="$1"
+	local bundle_version="$2"
+	local supported_platform="$3"
+	local required_capabilities=""
+	if [[ "${supported_platform}" == "iPhoneOS" ]]; then
+		required_capabilities=$'\t<key>UIRequiredDeviceCapabilities</key>\n\t<array>\n\t\t<string>arm64</string>\n\t</array>\n'
+	fi
+	cat >"${destination_plist}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>gdmarkdown</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.cafecitogames.gdmarkdown</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>gdmarkdown</string>
+	<key>CFBundlePackageType</key>
+	<string>FMWK</string>
+	<key>CFBundleShortVersionString</key>
+	<string>${bundle_version}</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>${supported_platform}</string>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>MinimumOSVersion</key>
+	<string>13.0</string>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+		<integer>2</integer>
+	</array>
+${required_capabilities}</dict>
+</plist>
+EOF
+}
+
+build_macos() {
+	require_command scons "install via pipx/pip/brew install scons"
+	require_command install_name_tool "requires Xcode Command Line Tools"
+	require_command codesign "requires Xcode Command Line Tools"
+
+	local job_count
+	local addon_version
+	job_count="$(detect_job_count)"
+	addon_version="$(read_addon_version)"
+
+	(
+		cd "${native_directory}"
+		PYTHONHASHSEED=0 scons platform=macos arch=arm64 target=template_release -j "${job_count}"
+	)
+
+	local source_library="${native_directory}/build/macos_arm64/libgdmarkdown.macos.template_release.arm64.dylib"
+	[[ -f "${source_library}" ]] || fail "expected macOS library not found: ${source_library}"
+
+	# Flat framework bundle (regular files only, no symlinks) so gpm slice
+	# archives package cleanly while macOS dyld and codesign load it natively.
+	local framework_directory="${addon_binary_directory}/macos_arm64/gdmarkdown.framework"
+	rm -rf "${framework_directory}"
+	mkdir -p "${framework_directory}/Resources"
+
+	cp "${source_library}" "${framework_directory}/gdmarkdown"
+	install_name_tool -id "@rpath/gdmarkdown.framework/gdmarkdown" "${framework_directory}/gdmarkdown"
+	write_macos_info_plist "${framework_directory}/Resources/Info.plist" "${addon_version}"
+
+	codesign --force --sign - "${framework_directory}"
+
+	echo "Built macOS framework at ${framework_directory}"
+}
+
+build_ios() {
+	require_command scons "install via pipx/pip/brew install scons"
+	require_command install_name_tool "requires Xcode Command Line Tools"
+	require_command xcodebuild "requires full Xcode installation"
+	require_command codesign "requires Xcode Command Line Tools"
+
+	local job_count
+	local addon_version
+	job_count="$(detect_job_count)"
+	addon_version="$(read_addon_version)"
+
+	(
+		cd "${native_directory}"
+		scons platform=ios arch=arm64 ios_simulator=no ios_min_version=13.0 target=template_release -j "${job_count}"
+		scons platform=ios arch=arm64 ios_simulator=yes ios_min_version=13.0 target=template_release -j "${job_count}"
+	)
+
+	local device_library="${native_directory}/build/ios_device_arm64/libgdmarkdown.ios.device.template_release.arm64.dylib"
+	local simulator_library="${native_directory}/build/ios_simulator_arm64/libgdmarkdown.ios.simulator.template_release.arm64.dylib"
+	[[ -f "${device_library}" ]] || fail "expected iOS device library not found: ${device_library}"
+	[[ -f "${simulator_library}" ]] || fail "expected iOS simulator library not found: ${simulator_library}"
+
+	local staging_directory
+	staging_directory="$(mktemp -d)"
+	trap 'rm -rf "${staging_directory}"' RETURN
+
+	local device_framework="${staging_directory}/device/gdmarkdown.framework"
+	local simulator_framework="${staging_directory}/simulator/gdmarkdown.framework"
+	mkdir -p "${device_framework}" "${simulator_framework}"
+
+	cp "${device_library}" "${device_framework}/gdmarkdown"
+	install_name_tool -id "@rpath/gdmarkdown.framework/gdmarkdown" "${device_framework}/gdmarkdown"
+	write_ios_info_plist "${device_framework}/Info.plist" "${addon_version}" "iPhoneOS"
+	codesign --force --sign - "${device_framework}"
+
+	cp "${simulator_library}" "${simulator_framework}/gdmarkdown"
+	install_name_tool -id "@rpath/gdmarkdown.framework/gdmarkdown" "${simulator_framework}/gdmarkdown"
+	write_ios_info_plist "${simulator_framework}/Info.plist" "${addon_version}" "iPhoneSimulator"
+	codesign --force --sign - "${simulator_framework}"
+
+	local output_xcframework="${addon_binary_directory}/ios/gdmarkdown.xcframework"
+	mkdir -p "${addon_binary_directory}/ios"
+	rm -rf "${output_xcframework}"
+
+	xcodebuild -create-xcframework \
+		-framework "${device_framework}" \
+		-framework "${simulator_framework}" \
+		-output "${output_xcframework}"
+
+	"${repository_root}/scripts/sign-ios-frameworks" "${output_xcframework}"
+
+	echo "Built iOS xcframework at ${output_xcframework}"
+}
+
+discover_android_ndk() {
+	if [[ -n "${ANDROID_NDK_ROOT:-}" && -d "${ANDROID_NDK_ROOT}" ]]; then
+		printf '%s\n' "${ANDROID_NDK_ROOT}"
+		return 0
+	fi
+	if [[ -n "${ANDROID_NDK_HOME:-}" && -d "${ANDROID_NDK_HOME}" ]]; then
+		printf '%s\n' "${ANDROID_NDK_HOME}"
+		return 0
+	fi
+
+	local search_root
+	local candidate
+	for search_root in \
+		"${ANDROID_HOME:-}/ndk" \
+		"${ANDROID_SDK_ROOT:-}/ndk" \
+		"${HOME}/Library/Android/sdk/ndk" \
+		"${HOME}/Android/Sdk/ndk"
+	do
+		[[ -n "${search_root}" && -d "${search_root}" ]] || continue
+		candidate="$(find "${search_root}" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+		if [[ -n "${candidate}" && -d "${candidate}" ]]; then
+			printf '%s\n' "${candidate}"
+			return 0
+		fi
+	done
+
+	return 1
+}
+
+build_android() {
+	require_command scons "install via pipx/pip/brew install scons"
+
+	local ndk_root
+	ndk_root="$(discover_android_ndk)" \
+		|| fail "Android NDK not found; set ANDROID_NDK_ROOT, ANDROID_NDK_HOME, or install an NDK under ANDROID_HOME/ndk"
+
+	local requested="${1:-all}"
+	local architectures=()
+	case "${requested}" in
+		all) architectures=(arm64 arm32 x86_64) ;;
+		arm64 | arm32 | x86_64) architectures=("${requested}") ;;
+		*) fail "unsupported Android architecture '${requested}' (expected arm64, arm32, x86_64, or all)" ;;
+	esac
+
+	local job_count
+	job_count="$(detect_job_count)"
+
+	local output_directory="${addon_binary_directory}/android"
+	mkdir -p "${output_directory}"
+
+	echo "Using Android NDK: ${ndk_root}"
+	local architecture
+	for architecture in "${architectures[@]}"; do
+		(
+			cd "${native_directory}"
+			# godot-cpp's android tool prefers ANDROID_HOME/ndk/<hardcoded-default>
+			# whenever ANDROID_HOME is non-empty; clearing it forces ANDROID_NDK_ROOT.
+			ANDROID_NDK_ROOT="${ndk_root}" \
+				scons platform=android arch="${architecture}" target=template_release ANDROID_HOME="" -j "${job_count}"
+		)
+
+		local source_library="${native_directory}/build/android_${architecture}/libgdmarkdown.android.template_release.${architecture}.so"
+		[[ -f "${source_library}" ]] || fail "expected Android library not found: ${source_library}"
+
+		local destination_library="${output_directory}/libgdmarkdown.android.release.${architecture}.so"
+		cp "${source_library}" "${destination_library}"
+		echo "Built Android (${architecture}) library at ${destination_library}"
+	done
+}
+
+detect_host_architecture() {
+	case "$(uname -m)" in
+		x86_64 | amd64) echo "x86_64" ;;
+		arm64 | aarch64) echo "arm64" ;;
+		*) fail "unsupported host architecture: $(uname -m)" ;;
+	esac
+}
+
+build_linux() {
+	require_command scons "install via pip/apt install scons"
+
+	local host_architecture
+	host_architecture="$(detect_host_architecture)"
+	local requested="${1:-${host_architecture}}"
+	local architectures=()
+	case "${requested}" in
+		all) architectures=(x86_64 arm64) ;;
+		x86_64 | arm64) architectures=("${requested}") ;;
+		*) fail "unsupported Linux architecture '${requested}' (expected x86_64, arm64, or all)" ;;
+	esac
+
+	local job_count
+	job_count="$(detect_job_count)"
+
+	local architecture
+	for architecture in "${architectures[@]}"; do
+		if [[ "$(uname -s)" != "Linux" ]]; then
+			fail "Linux native builds must run on a Linux host (current host: $(uname -s))"
+		fi
+		if [[ "${architecture}" != "${host_architecture}" ]]; then
+			fail "Linux ${architecture} must be built on a matching ${architecture} Linux host (current host: ${host_architecture})"
+		fi
+
+		(
+			cd "${native_directory}"
+			scons platform=linux arch="${architecture}" target=template_release -j "${job_count}"
+		)
+
+		local source_library="${native_directory}/build/linux_${architecture}/libgdmarkdown.linux.template_release.${architecture}.so"
+		[[ -f "${source_library}" ]] || fail "expected Linux library not found: ${source_library}"
+
+		local output_directory="${addon_binary_directory}/linux_${architecture}"
+		mkdir -p "${output_directory}"
+		cp "${source_library}" "${output_directory}/libgdmarkdown.so"
+		echo "Built Linux (${architecture}) library at ${output_directory}/libgdmarkdown.so"
+	done
+}
+
+run_native_tests() {
+	local cpp_compiler=""
+	local c_compiler=""
+	if command -v clang++ >/dev/null 2>&1; then
+		cpp_compiler="clang++"
+		c_compiler="clang"
+	elif command -v c++ >/dev/null 2>&1; then
+		cpp_compiler="c++"
+		c_compiler="cc"
+	else
+		fail "no C++ compiler found (install clang++ or g++)"
+	fi
+
+	local test_source="${native_directory}/tests/test_native.cpp"
+	local parser_source="${native_directory}/src/parser/markdown_parser.cpp"
+	local table_source="${native_directory}/src/layout/table_sizing.cpp"
+	local md4c_source="${native_directory}/third_party/md4c/md4c.c"
+	local entity_source="${native_directory}/third_party/md4c/entity.c"
+
+	for required_file in "${test_source}" "${parser_source}" "${table_source}" "${md4c_source}" "${entity_source}"; do
+		[[ -f "${required_file}" ]] || fail "missing native test input: ${required_file}"
+	done
+
+	local build_directory="${native_directory}/build"
+	mkdir -p "${build_directory}"
+
+	local md4c_object="${build_directory}/test_md4c.o"
+	local entity_object="${build_directory}/test_entity.o"
+	local test_executable="${build_directory}/test_native"
+
+	"${c_compiler}" -std=c99 -O2 -Wall -Wextra -c \
+		"${md4c_source}" \
+		-o "${md4c_object}"
+
+	"${c_compiler}" -std=c99 -O2 -Wall -Wextra -c \
+		"${entity_source}" \
+		-o "${entity_object}"
+
+	"${cpp_compiler}" -std=c++17 -Wall -Wextra -Werror \
+		-I"${native_directory}/src" \
+		-I"${native_directory}/third_party/md4c" \
+		"${test_source}" \
+		"${parser_source}" \
+		"${table_source}" \
+		"${md4c_object}" \
+		"${entity_object}" \
+		-o "${test_executable}"
+
+	"${test_executable}"
+}
+
+subcommand="${1:-}"
+shift || true
+
+case "${subcommand}" in
+	macos)
+		build_macos "$@"
+		;;
+	ios)
+		build_ios "$@"
+		;;
+	android)
+		build_android "$@"
+		;;
+	linux)
+		build_linux "$@"
+		;;
+	test-native)
+		run_native_tests "$@"
+		;;
+	*)
+		echo "usage: scripts/build-native <macos|ios|android|linux|test-native> [args...]" >&2
+		exit 2
+		;;
+esac

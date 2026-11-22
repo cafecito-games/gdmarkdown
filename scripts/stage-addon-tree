@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# Stage the shippable gdmarkdown addon tree into a destination root.
+#
+# This is the single definition of what a release contains. Both the release zip
+# and the gpm slice archives are built from a tree produced here, so the two
+# cannot drift apart.
+#
+# Usage: scripts/stage-addon-tree <destination-root> [--version MAJOR.MINOR.PATCH]
+# Produces <destination-root>/addons/gdmarkdown.
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+destination_root=""
+version=""
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--version)
+			version="${2:-}"
+			shift 2
+			;;
+		-*)
+			echo "usage: scripts/stage-addon-tree <destination-root> [--version MAJOR.MINOR.PATCH]" >&2
+			exit 2
+			;;
+		*)
+			if [[ -n "${destination_root}" ]]; then
+				echo "usage: scripts/stage-addon-tree <destination-root> [--version MAJOR.MINOR.PATCH]" >&2
+				exit 2
+			fi
+			destination_root="$1"
+			shift
+			;;
+	esac
+done
+
+if [[ -z "${destination_root}" ]]; then
+	echo "usage: scripts/stage-addon-tree <destination-root> [--version MAJOR.MINOR.PATCH]" >&2
+	exit 2
+fi
+
+# GDMARKDOWN_ADDON_SRC lets scripts/verify-package stage a synthesized tree
+# instead of the working one, so the packaging contract is testable without a
+# full cross-platform native build on a single host.
+addon_source="${GDMARKDOWN_ADDON_SRC:-${repository_root}/addons/gdmarkdown}"
+if [[ ! -d "${addon_source}" ]]; then
+	echo "addon source directory does not exist: ${addon_source}" >&2
+	exit 1
+fi
+
+mkdir -p "${destination_root}/addons"
+rm -rf "${destination_root}/addons/gdmarkdown"
+cp -R "${addon_source}" "${destination_root}/addons/gdmarkdown"
+
+staged_addon="${destination_root}/addons/gdmarkdown"
+
+# Strip metadata and any stray build-time files that must never ship.
+rm -rf "${staged_addon}/native"
+find "${staged_addon}" -name ".DS_Store" -delete
+find "${staged_addon}" -name ".gitkeep" -delete
+
+if [[ -n "${version}" ]]; then
+	if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+		echo "version '${version}' is not strict MAJOR.MINOR.PATCH" >&2
+		exit 1
+	fi
+	staged_config="${staged_addon}/plugin.cfg"
+	python3 - "${staged_config}" "${version}" <<'PYTHON'
+import pathlib
+import sys
+
+config, version = pathlib.Path(sys.argv[1]), sys.argv[2]
+lines = []
+replaced = False
+for line in config.read_text().splitlines(keepends=True):
+    if line.startswith('version="'):
+        line = 'version="%s"\n' % version
+        replaced = True
+    lines.append(line)
+if not replaced:
+    raise SystemExit("no version key in %s" % config)
+config.write_text("".join(lines))
+PYTHON
+fi
+
+echo "Staged gdmarkdown into ${staged_addon}"
