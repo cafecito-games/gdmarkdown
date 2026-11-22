@@ -247,6 +247,14 @@ void test_html_entities_and_null_character() {
 	const Document null_doc = parse_markdown(with_null);
 	EXPECT_EQ(null_doc.blocks.size(), static_cast<size_t>(1));
 	EXPECT_EQ(null_doc.blocks[0].inlines[0].text, std::string("ab\xEF\xBF\xBD" "cd"));
+
+	// Full HTML5/CommonMark named entity coverage including accented letters
+	// and two-codepoint entities (&NotEqualTilde; -> U+2242 + U+0338).
+	const Document html5_named = parse_markdown("caf&eacute; &NotEqualTilde; &ohm;");
+	EXPECT_EQ(html5_named.blocks.size(), static_cast<size_t>(1));
+	EXPECT_EQ(
+			html5_named.blocks[0].inlines[0].text,
+			std::string("caf\xC3\xA9 \xE2\x89\x82\xCC\xB8 \xCE\xA9"));
 }
 
 void test_br_tags_and_raw_html_stripping() {

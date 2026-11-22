@@ -320,6 +320,48 @@ func test_code_block_wrap_toggle_changes_height_for_long_line() -> void:
 	expect_true(unwrapped_height > 0.0)
 
 
+## Verifies a deliberate trailing blank line inside a fenced code block is
+## preserved in layout rather than stripped a second time.
+func test_code_block_preserves_trailing_blank_line() -> void:
+	var view: MarkdownView = _mount_view(360.0)
+	view.markdown = "```\nline one\n```"
+	await sleep()
+	var single_line_height: float = view.get_combined_minimum_size().y
+
+	view.markdown = "```\nline one\n\n```"
+	await sleep()
+	var trailing_blank_height: float = view.get_combined_minimum_size().y
+
+	expect_true(trailing_blank_height > single_line_height)
+
+
+## Verifies linked inline images on a second line are positioned and hit-tested
+## on that second line rather than overlapping the first line.
+func test_multiline_linked_inline_image_hit_testing() -> void:
+	var view: MarkdownView = _mount_view(360.0)
+	var theme: MarkdownTheme = MarkdownTheme.create_dark()
+	view.markdown_theme = theme
+	var icon_texture: ImageTexture = _make_solid_texture(24, 24, Color.GOLD)
+	view.image_resolver = func(uri: String) -> Texture2D:
+		if uri == "icon://badge":
+			return icon_texture
+		return null
+	view.markdown = "First line<br>[![Badge](icon://badge)](https://example.com/line2)"
+	await sleep()
+
+	var clicked: GDTestSignalProbe = watch_signal(view.link_clicked)
+
+	# Clicking the first line must not trigger the second-line linked image.
+	_send_left_click(view, Vector2(10.0, 8.0))
+	expect_equal(clicked.emission_count(), 0)
+
+	# Clicking the second line hits the linked inline image at its paragraph-local y.
+	var second_line_y: float = float(theme.base_font_size) + theme.line_spacing + 10.0
+	_send_left_click(view, Vector2(10.0, second_line_y))
+	expect_equal(clicked.emission_count(), 1)
+	expect_equal(clicked.arguments_at(0), ["https://example.com/line2"])
+
+
 ## Verifies extreme narrow-width tables clamp cell padding so laid-out height
 ## stays positive and finite without NaN or unconstrained wrapping.
 func test_narrow_table_layout_remains_finite_and_positive() -> void:

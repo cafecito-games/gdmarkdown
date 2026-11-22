@@ -30,7 +30,14 @@ detect_job_count() {
 }
 
 read_addon_version() {
-	local version=""
+	local version="${GDMARKDOWN_VERSION:-}"
+	if [[ -n "${version}" ]]; then
+		if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+			fail "GDMARKDOWN_VERSION '${version}' is not strict MAJOR.MINOR.PATCH"
+		fi
+		printf '%s\n' "${version}"
+		return
+	fi
 	if [[ -f "${plugin_config}" ]]; then
 		version="$(sed -n 's/^version="\(.*\)"$/\1/p' "${plugin_config}")"
 	fi
@@ -348,8 +355,9 @@ run_native_tests() {
 	local parser_source="${native_directory}/src/parser/markdown_parser.cpp"
 	local table_source="${native_directory}/src/layout/table_sizing.cpp"
 	local md4c_source="${native_directory}/third_party/md4c/md4c.c"
+	local entity_source="${native_directory}/third_party/md4c/entity.c"
 
-	for required_file in "${test_source}" "${parser_source}" "${table_source}" "${md4c_source}"; do
+	for required_file in "${test_source}" "${parser_source}" "${table_source}" "${md4c_source}" "${entity_source}"; do
 		[[ -f "${required_file}" ]] || fail "missing native test input: ${required_file}"
 	done
 
@@ -357,11 +365,16 @@ run_native_tests() {
 	mkdir -p "${build_directory}"
 
 	local md4c_object="${build_directory}/test_md4c.o"
+	local entity_object="${build_directory}/test_entity.o"
 	local test_executable="${build_directory}/test_native"
 
 	"${c_compiler}" -std=c99 -O2 -Wall -Wextra -c \
 		"${md4c_source}" \
 		-o "${md4c_object}"
+
+	"${c_compiler}" -std=c99 -O2 -Wall -Wextra -c \
+		"${entity_source}" \
+		-o "${entity_object}"
 
 	"${cpp_compiler}" -std=c++17 -Wall -Wextra -Werror \
 		-I"${native_directory}/src" \
@@ -370,6 +383,7 @@ run_native_tests() {
 		"${parser_source}" \
 		"${table_source}" \
 		"${md4c_object}" \
+		"${entity_object}" \
 		-o "${test_executable}"
 
 	"${test_executable}"

@@ -410,7 +410,11 @@ private:
 
 		int local_offset = 0;
 		if (font.is_valid() && !text.is_empty()) {
-			paragraph->add_string(text, font, font_size);
+			// TextParagraph omits an empty final line for a bare trailing '\n';
+			// appending a zero-width space for shaping preserves deliberate
+			// trailing blank lines without altering plain_text or character counts.
+			String shaped_text = text.ends_with("\n") ? (text + String::chr(0x200B)) : text;
+			paragraph->add_string(shaped_text, font, font_size);
 			local_offset = text.length();
 		}
 
@@ -565,6 +569,9 @@ private:
 					String key_string = object_key;
 					for (const PendingInlineImage &pending : pending_images) {
 						if (pending.object_key == key_string) {
+							// TextParagraph::get_line_object_rect() already accumulates prior
+							// lines' heights, line_spacing, and horizontal alignment, so its
+							// result is in paragraph-local coordinates (not line-local).
 							Rect2 object_rectangle = paragraph->get_line_object_rect(line_index, object_key);
 							InlineImagePlacement placement;
 							placement.rectangle = object_rectangle;
@@ -990,11 +997,9 @@ private:
 				int code_font_size = std::max(1, static_cast<int>(std::round(static_cast<float>(base_font_size) * theme->get_code_font_scale())));
 				int threshold = running_character_count;
 
-				std::string trimmed_code = block.code_text;
-				if (!trimmed_code.empty() && trimmed_code.back() == '\n') {
-					trimmed_code.pop_back();
-				}
-				String code_string = utf8_to_godot_string(trimmed_code);
+				// markdown_parser already strips md4c's single synthetic terminal
+				// newline, so any remaining trailing '\n' is a deliberate blank line.
+				String code_string = utf8_to_godot_string(block.code_text);
 
 				size_t background_index = result.primitives.size();
 				PaintPrimitive background;

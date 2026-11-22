@@ -33,6 +33,7 @@ cpp_sources = [
 ]
 c_sources = [
     "third_party/md4c/md4c.c",
+    "third_party/md4c/entity.c",
 ]
 
 sources = cpp_sources + c_sources

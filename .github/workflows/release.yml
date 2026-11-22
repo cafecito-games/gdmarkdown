@@ -210,6 +210,8 @@ jobs:
           echo "GDMARKDOWN_SIGNING_IDENTITY=${identity}" >> "${GITHUB_ENV}"
 
       - name: Build and sign macOS and iOS frameworks
+        env:
+          GDMARKDOWN_VERSION: ${{ needs.quality.outputs.version }}
         run: |
           scripts/build-native macos
           scripts/build-native ios

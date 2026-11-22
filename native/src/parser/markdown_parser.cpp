@@ -4,6 +4,9 @@
 #include "parser/markdown_parser.hpp"
 
 #include "md4c.h"
+extern "C" {
+#include "entity.h"
+}
 
 #include <algorithm>
 #include <cctype>
@@ -90,40 +93,6 @@ void append_utf8_code_point(std::string &output, uint32_t code_point) {
 	}
 }
 
-struct NamedEntityEntry {
-	std::string_view name;
-	std::string_view replacement;
-};
-
-constexpr NamedEntityEntry NAMED_ENTITIES[] = {
-	{ "&amp;", "&" },
-	{ "&lt;", "<" },
-	{ "&gt;", ">" },
-	{ "&quot;", "\"" },
-	{ "&apos;", "'" },
-	{ "&nbsp;", "\xC2\xA0" },
-	{ "&mdash;", "\xE2\x80\x94" },
-	{ "&ndash;", "\xE2\x80\x93" },
-	{ "&hellip;", "\xE2\x80\xA6" },
-	{ "&copy;", "\xC2\xA9" },
-	{ "&reg;", "\xC2\xAE" },
-	{ "&trade;", "\xE2\x84\xA2" },
-	{ "&bull;", "\xE2\x80\xA2" },
-	{ "&times;", "\xC3\x97" },
-	{ "&divide;", "\xC3\xB7" },
-	{ "&plusmn;", "\xC2\xB1" },
-	{ "&laquo;", "\xC2\xAB" },
-	{ "&raquo;", "\xC2\xBB" },
-	{ "&lsquo;", "\xE2\x80\x98" },
-	{ "&rsquo;", "\xE2\x80\x99" },
-	{ "&ldquo;", "\xE2\x80\x9C" },
-	{ "&rdquo;", "\xE2\x80\x9D" },
-	{ "&rarr;", "\xE2\x86\x92" },
-	{ "&larr;", "\xE2\x86\x90" },
-	{ "&uarr;", "\xE2\x86\x91" },
-	{ "&darr;", "\xE2\x86\x93" },
-};
-
 std::string decode_entity(std::string_view entity) {
 	if (entity.size() < 3 || entity.front() != '&' || entity.back() != ';') {
 		return std::string(entity);
@@ -181,10 +150,14 @@ std::string decode_entity(std::string_view entity) {
 		return decoded;
 	}
 
-	for (const NamedEntityEntry &entry : NAMED_ENTITIES) {
-		if (entry.name == entity) {
-			return std::string(entry.replacement);
+	const ENTITY *named = entity_lookup(entity.data(), entity.size());
+	if (named != nullptr) {
+		std::string decoded;
+		append_utf8_code_point(decoded, static_cast<uint32_t>(named->codepoints[0]));
+		if (named->codepoints[1] != 0) {
+			append_utf8_code_point(decoded, static_cast<uint32_t>(named->codepoints[1]));
 		}
+		return decoded;
 	}
 
 	return std::string(entity);
