@@ -2,63 +2,77 @@
 
 # gdmarkdown
 
-**Markdown rendering for Godot 4, straight into a `RichTextLabel`.**
+**Native C++ Markdown rendering for Godot 4, built directly on `Control`, `TextParagraph`, and `TextServer`.**
 
-[![Godot 4.7](https://img.shields.io/badge/Godot-4.7-478cbf?logo=godotengine&logoColor=white)](https://godotengine.org)
+[![Godot 4.6+](https://img.shields.io/badge/Godot-4.6%2B%20(verified%204.7.2)-478cbf?logo=godotengine&logoColor=white)](https://godotengine.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Pure GDScript](https://img.shields.io/badge/pure-GDScript-355570)](addons/gdmarkdown)
+[![GDExtension C++](https://img.shields.io/badge/GDExtension-C%2B%2B%20%2B%20md4c-355570)](native)
 
 [Install](#install) ·
 [Quick start](#quick-start) ·
-[Styling](#styling) ·
+[Themes & callouts](#themes--callouts) ·
+[API reference](#api-reference) ·
 [What is supported](#what-is-supported) ·
+[Building & testing](#building--testing) ·
 [Architecture](docs/architecture.md) ·
 [Releasing](docs/releasing.md)
 
-<img src="docs/images/demo.png" alt="The gdmarkdown demo: a document list on the left, a rendered patch-notes document on the right" width="880">
+<img src="docs/images/demo.png" alt="The gdmarkdown showcase window displaying rendered Patch Notes in Slate Dark with theme controls, interactive toggles, typewriter slider, and live signal status bar" width="880">
 
 </div>
 
 ---
 
-Drop a `MarkdownLabel` into a scene, assign Markdown to it, and it renders. No
-build step, no native code, no runtime dependencies, nothing to configure. The
-addon is pure GDScript and every public symbol is statically typed.
+`gdmarkdown` v2 is a native C++ GDExtension (`godot-cpp` + vendored `md4c`) for
+Godot 4.6+ (verified on 4.7.2). Drop a `MarkdownView` into any container, assign
+Markdown text, and it renders with a real block box model, two-pass auto-sized
+tables, inline code pills, GitHub Alerts and custom game callouts, inline
+images/icons, interactive task checkboxes, and zero-reshaping typewriter reveal
+— without BBCode workarounds or network access.
 
 ```gdscript
-var label: MarkdownLabel = MarkdownLabel.new()
-label.markdown = """
-# Patch notes
+var view: MarkdownView = MarkdownView.new()
+view.markdown_theme = MarkdownTheme.create_dark()
+view.interactive_tasks = true
+view.markdown = """
+# Patch Notes
 
-Fixed the **grapple hook** clipping through walls.
+> [!TIP] Pro Tip
+> Press `Space` to trigger the **grapple hook** mid-air.
 
-- [x] Reproduced the bug
-- [ ] Write a regression test
+- [x] Reproduced the wall-clip bug
+- [ ] Add regression coverage
 
-See the [issue](https://example.com/issues/42) for details.
+See the [release notes](https://example.com/releases/2.0) for details.
 """
-add_child(label)
+add_child(view)
 ```
 
-## Why
+## Why a native renderer
 
-`RichTextLabel` already knows how to lay out rich text — it just speaks BBCode,
-which nobody wants to write by hand and no tool outside Godot produces. Your
-quest text, patch notes, tutorials, item descriptions and design docs are
-already Markdown. This addon is the translation layer between them, and nothing
-else:
-
-- **It is a `RichTextLabel`.** Every property you know still works —
-  `fit_content`, `scroll_active`, `selection_enabled`, themes, shaders.
-- **It never touches the network or the shell.** No HTTP client, no
-  `OS.shell_open` on rendered content. Clicking a link emits a signal and your
-  game decides.
-- **It is a library, not a framework.** One node, one static facade, one style
-  resource. Use the facade alone if you already own your label.
+- **Real block layout, not BBCode translation.** Headings, blockquotes, callout
+  cards, rounded code panels, auto-sized tables, and inline code pills are laid
+  out directly onto Godot's `TextParagraph`, `TextServer`, and `StyleBox`
+  pipeline, preserving native font shaping, HiDPI scaling, and container flow.
+- **Responsive inside `ScrollContainer`.** `MarkdownView` reports a zero
+  minimum width and dynamically re-wraps on resize so documents shrink and grow
+  freely inside split panes and scroll views without locking horizontally.
+- **Built for games.** Register custom callouts (`> [!QUEST]`, `> [!LORE]`),
+  resolve inline item/currency icons via `image_resolver`, toggle interactive
+  task checklists, and animate RPG dialogue with zero-reshaping `visible_ratio`
+  / `visible_characters` typewriter reveal.
+- **Zero network or shell side effects.** The addon never performs HTTP
+  requests or calls `OS.shell_open`. Links emit signals and images resolve
+  locally (`res://`) or through your own `image_resolver` callback.
+- **One portable C++ codebase.** Ships prebuilt native binaries for macOS, iOS,
+  Android, and Linux with no `SwiftGodot` or Java/Gradle dependencies.
 
 ## Install
 
-With [gpm](https://github.com/cafecito-games/godot-package-manager):
+### With `gpm` (recommended)
+
+Install via [gpm](https://github.com/cafecito-games/godot-package-manager)
+(`0.6.0` or newer):
 
 ```sh
 gpm add --name gdmarkdown \
@@ -67,177 +81,251 @@ gpm add --name gdmarkdown \
   --version <tag>
 ```
 
-Or copy `addons/gdmarkdown/` into your project. Either way, enable
-**gdmarkdown** in *Project ▸ Project Settings ▸ Plugins*.
+Enable **gdmarkdown** in *Project ▸ Project Settings ▸ Plugins*.
 
-The addon is pure GDScript, so it publishes a single `core` slice and installs
-the same files on every platform, mobile and web included.
+### Platform slices
+
+Releases publish a `gpm-index.toml` alongside 8 independent platform slices, so
+`gpm` downloads `core` plus only the native binaries your project targets:
+
+| Slice | Contents |
+| --- | --- |
+| `core` | `plugin.cfg`, `plugin.gd`, `gdmarkdown.gdextension`, and `.uid` sidecars (no native binaries) |
+| `ios` | `bin/ios/gdmarkdown.xcframework` — dynamic device `arm64` + simulator `arm64` framework (Godot 4.6+) |
+| `macos.arm64` | `bin/macos_arm64/gdmarkdown.framework` — Apple Silicon macOS dynamic framework |
+| `android.arm64` | `bin/android/libgdmarkdown.android.release.arm64.so` (`arm64-v8a`) |
+| `android.arm32` | `bin/android/libgdmarkdown.android.release.arm32.so` (`armeabi-v7a`) |
+| `android.x86_64` | `bin/android/libgdmarkdown.android.release.x86_64.so` (`x86_64`) |
+| `linux.x86_64` | `bin/linux_x86_64/libgdmarkdown.so` (`x86_64`) |
+| `linux.arm64` | `bin/linux_arm64/libgdmarkdown.so` (`arm64`) |
+
+### Manual / vendored install
+
+From a local checkout after building the native targets you need:
+
+```sh
+task vendor DEST=/path/to/your/godot-project
+```
+
+`task vendor` stages only the runtime `addons/gdmarkdown/` tree (never `native/`
+build sources) and syncs it into the destination project.
 
 ## Quick start
 
-### The node
-
 ```gdscript
-@onready var notes: MarkdownLabel = $Notes
+@onready var quest_view: MarkdownView = %QuestView
 
 func _ready() -> void:
-	notes.markdown = FileAccess.get_file_as_string("res://content/patch_notes.md")
-	notes.link_clicked.connect(_on_link_clicked)
+	var theme: MarkdownTheme = MarkdownTheme.create_dark()
+	theme.set_callout_style(
+			"QUEST",
+			MarkdownCalloutStyle.create(
+					"Active Quest",
+					Color(0.957, 0.761, 0.298),
+					Color(0.957, 0.761, 0.298),
+					preload("res://ui/icons/quest.png")
+			)
+	)
 
-func _on_link_clicked(target: String) -> void:
-	if target.begins_with("https://"):
-		OS.shell_open(target)
+	quest_view.markdown_theme = theme
+	quest_view.interactive_tasks = true
+	quest_view.image_resolver = _resolve_inline_icon
+
+	var clicked_err: int = quest_view.link_clicked.connect(_on_link_clicked)
+	var hovered_err: int = quest_view.link_hovered.connect(_on_link_hovered)
+	var task_err: int = quest_view.task_toggled.connect(_on_task_toggled)
+	var layout_err: int = quest_view.layout_updated.connect(_on_layout_updated)
+	assert(clicked_err == OK and hovered_err == OK and task_err == OK and layout_err == OK)
+
+	quest_view.markdown = """
+# The Drowned Bell
+
+> [!QUEST] Main Objective
+> Strike the **Seventh Bell** at low tide with `sluice_key` ready.
+
+- [x] Recover the harbor charts
+- [ ] Collect 240 ![Gold](icon://gold) Sovereigns
+
+Read the [Harbor Charter](codex://harbor-charter).
+"""
+
+func _resolve_inline_icon(uri: String) -> Texture2D:
+	if uri == "icon://gold":
+		return preload("res://ui/icons/gold_coin.png")
+	return null
+
+func _on_link_clicked(url: String) -> void:
+	if url.begins_with("https://"):
+		OS.shell_open(url)
+
+func _on_link_hovered(url: String) -> void:
+	pass # Empty string when the pointer leaves a link.
+
+func _on_task_toggled(task_index: int, checked: bool) -> void:
+	pass # Persist quest objective state without re-parsing Markdown.
+
+func _on_layout_updated() -> void:
+	pass # Minimum height updated after content, theme, or width change.
 ```
 
-| Member | Meaning |
-| --- | --- |
-| `markdown: String` | The Markdown source. Setting it re-renders. |
-| `markdown_style: MarkdownStyle` | Visual settings. Empty means defaults. |
-| `link_clicked(target: String)` | Emitted when a link is clicked. |
-| `get_document() -> MarkdownDocument` | The parsed tree, for an outline or a search index. |
+### Typewriter reveal
 
-Conversion runs in the editor too, so the inspector shows the rendered result
-as you type.
-
-### Without the node
+Animate dialogue or codex entries using `visible_characters` or `visible_ratio`
+without re-shaping paragraphs or shifting word wraps mid-word:
 
 ```gdscript
-label.bbcode_enabled = true
-label.text = Markdown.to_bbcode(source, my_style)
+quest_view.visible_ratio = 0.0
+var tween: Tween = create_tween()
+tween.tween_property(quest_view, "visible_ratio", 1.0, 1.8)
 ```
 
-`Markdown.parse(source)` returns the document tree instead — useful for
-building a table of contents, extracting every link, or walking headings.
+## Themes & callouts
 
-## What it renders
+`MarkdownTheme` and `MarkdownCalloutStyle` are Inspector-editable `Resource`
+classes. Mutating any property emits `changed` and automatically re-lays out
+every attached `MarkdownView`.
 
-Lists, tables, task lists, code blocks and nested quotes, all from plain
-Markdown:
+<img src="docs/images/styles.png" alt="Side-by-side comparison of Slate Dark, Paper Light, and Parchment RPG themes rendering the same Markdown document with custom QUEST and LORE callouts, inline icons, tasks, and aligned tables" width="880">
 
-<img src="docs/images/constructs.png" alt="A rendered quest log showing a task list, a right-aligned table, a thematic break and a nested block quote" width="620">
+Built-in presets `MarkdownTheme.create_dark()` and `MarkdownTheme.create_light()`
+pre-seed all five GitHub Alert styles (`NOTE`, `TIP`, `IMPORTANT`, `WARNING`,
+`CAUTION`) with procedural vector icons. Any custom directive such as
+`> [!QUEST]` or `> [!LORE]` looks up its uppercased key in
+`MarkdownTheme.callouts`, or synthesizes a clean title-cased fallback style
+automatically.
 
-## Styling
+<img src="docs/images/constructs.png" alt="Two-column showcase featuring RPG Quest Log with inline icons and custom callouts, the Terminal console preset, all five GitHub alerts, code blocks, tables, and a decorative block banner" width="880">
 
-`MarkdownStyle` is a `Resource`: inspector-editable, saveable as a `.tres`, and
-shareable between labels. Changing any property re-renders every label using
-it. Nothing in the addon assumes a dark theme.
+Run `task demo` in a checkout to explore all four showcase presets (*Slate
+Dark*, *Paper Light*, *Parchment RPG*, *Terminal*), toggle interactive tasks and
+code wrapping, scrub typewriter reveal, and edit Markdown live.
 
-<img src="docs/images/styles.png" alt="The same document rendered with two different MarkdownStyle resources: a warm light theme and a green terminal theme" width="880">
+## API reference
 
-| Property | Default | Meaning |
-| --- | --- | --- |
-| `heading_font_sizes` | `[32, 28, 24, 20, 18, 16]` | Font size per heading level |
-| `heading_bold` | `true` | Whether headings render bold |
-| `code_background_color` | dark slate | Background of code spans and blocks |
-| `code_text_color` | warm sand | Text color of code spans and blocks |
-| `solid_code_background` | `true` | Draw code blocks as a padded rectangle |
-| `code_block_padding` | `10` | Padding inside a solid code block |
-| `show_code_language` | `false` | Print a fence's info string above it |
-| `quote_color` | muted grey | Block quotes and thematic breaks |
-| `link_color` | blue | Link color, when `color_links` is on |
-| `color_links` | `true` | Off inherits the label's own theme |
-| `unordered_bullet` | `•` | Bullet in front of unordered items |
-| `task_unchecked_glyph` | `☐` | Unchecked task list marker |
-| `task_checked_glyph` | `☑` | Checked task list marker |
-| `thematic_break_text` | `──────────` | Text drawn for `---` |
-| `table_cell_padding` | `(10, 4)` | Padding inside a table cell |
-| `render_tables` | `true` | Off renders rows as plain lines, which reflows better |
-| `preserve_soft_breaks` | `false` | Keep single newlines as line breaks |
-| `image_width` | `0` | Scale images to this width; 0 keeps natural size |
+### `MarkdownView` (`Control`)
 
-Run `godot --path .` in a checkout to open the demo above and switch between
-the three presets live.
+| Member | Type | Default | Description |
+| --- | --- | --- | --- |
+| `markdown` | `String` | `""` | Markdown source. Reassigning re-parses and resets runtime task states. |
+| `markdown_theme` | `MarkdownTheme` | `null` | Styling resource. Falls back to an internal dark theme when unset. |
+| `interactive_tasks` | `bool` | `false` | Allows clicking task checkboxes to toggle state and emit `task_toggled`. |
+| `code_block_wrap` | `bool` | `true` | Wraps long code lines when `true`; enables horizontal scrolling with a scrollbar when `false`. |
+| `visible_characters` | `int` | `-1` | Typewriter character limit (`-1` renders the full document). Synchronized with `visible_ratio`. |
+| `visible_ratio` | `float` | `1.0` | Fraction of characters revealed (`0.0` to `1.0`). Synchronized with `visible_characters`. |
+| `image_resolver` | `Callable` | `Callable()` | Optional `Callable(uri: String) -> Texture2D` checked before local `res://` loading. |
+
+**Signals**
+
+- `link_clicked(url: String)` — emitted on left-click over a link fragment.
+- `link_hovered(url: String)` — emitted when entering a link, or with `""` on leave / `NOTIFICATION_MOUSE_EXIT`.
+- `task_toggled(task_index: int, checked: bool)` — emitted when an interactive task checkbox is toggled by user input.
+- `layout_updated()` — emitted after layout finishes rebuilding.
+
+**Methods**
+
+- `get_total_character_count() -> int` — total character count across laid-out paragraphs.
+- `get_task_count() -> int` — number of task items parsed in the current document.
+- `is_task_checked(task_index: int) -> bool` — current checked state of a 0-based task index (returns `false` if out of range).
+- `set_task_checked(task_index: int, checked: bool) -> void` — updates a task checkbox visually without re-parsing Markdown.
+- `get_plain_text() -> String` — extracted plain text with Markdown syntax stripped.
+- `clear_image_cache() -> void` — drops cached `image_resolver` / `res://` textures and triggers a relayout.
+
+### `MarkdownTheme` (`Resource`)
+
+- **Factory presets:** `MarkdownTheme.create_dark()`, `MarkdownTheme.create_light()`
+- **Fonts** *(inherit the `Control`'s default theme font when `null`)*:
+  `regular_font`, `bold_font`, `italic_font`, `bold_italic_font`, `monospace_font`
+- **Typography & `em` rhythm:**
+  `base_font_size` (`16`), `code_font_scale` (`0.9`), `line_spacing` (`4.0`),
+  `paragraph_spacing_em` (`0.75`), `heading_scales` (`[1.85, 1.5, 1.25, 1.1, 1.0, 0.9]`),
+  `heading_top_spacing_em` (`1.1`), `heading_bottom_spacing_em` (`0.4`),
+  `list_indent_em` (`1.5`), `list_item_spacing_em` (`0.3`), `blockquote_indent_em` (`1.0`)
+- **Colors:**
+  `text_color`, `heading_color`, `muted_color`, `link_color`, `link_hover_color`,
+  `code_text_color`, `code_bg_color`, `inline_code_bg_color`, `strikethrough_color`,
+  `rule_color`, `blockquote_accent_color`, `blockquote_bg_color`,
+  `table_border_color`, `table_header_bg_color`, `table_alt_row_bg_color`,
+  `task_checked_color`, `task_unchecked_color`
+- **Optional `StyleBox` overrides** *(clean procedural rounded surfaces drawn when `null`)*:
+  `code_block_style`, `inline_code_style`, `blockquote_style`, `table_style`, `table_header_style`
+- **Metrics:**
+  `inline_code_padding_horizontal` (`5.0`), `inline_code_padding_vertical` (`1.5`),
+  `code_block_padding` (`12.0`), `blockquote_padding` (`10.0`), `blockquote_accent_width` (`3.0`),
+  `callout_padding` (`12.0`), `callout_accent_width` (`4.0`), `callout_icon_size` (`16.0`),
+  `table_cell_padding_horizontal` (`10.0`), `table_cell_padding_vertical` (`7.0`),
+  `rule_thickness` (`1.0`), `corner_radius` (`6.0`), `max_image_height` (`420.0`),
+  `inline_image_scale` (`1.15`)
+- **Callout registry:**
+  `callouts: Dictionary`, `set_callout_style(kind, style)`, `get_callout_style(kind)`, `get_heading_scale(level)`
+
+### `MarkdownCalloutStyle` (`Resource`)
+
+- **Properties:** `title`, `accent_color`, `title_color` *(falls back to `accent_color` when alpha is `0`)*, `icon` *(procedural vector icon drawn when `null`)*, `panel_style` *(tinted rounded panel with left accent bar drawn when `null`)*
+- **Methods:** `MarkdownCalloutStyle.create(title, accent_color, title_color = Color(0, 0, 0, 0), icon = null, panel_style = null)`, `resolve_title_color() -> Color`
 
 ## What is supported
 
-Everything a `RichTextLabel` can express, from CommonMark and the GitHub
-Flavored Markdown extensions:
+CommonMark + GitHub Flavored Markdown parsed by vendored `md4c` v0.6.0:
 
-| | |
+| Feature | Support |
 | --- | --- |
-| **Headings** | ATX (`# Title`) and setext (`Title` over `===`) |
-| **Inline** | emphasis, strong, `***both***`, strikethrough, code spans |
-| **Code blocks** | fenced with ``` or `~~~`, info strings, and indented |
-| **Quotes** | nested to any depth, containing any other block |
-| **Lists** | ordered, unordered, nested, task; tight or loose; any start number |
-| **Links** | inline, reference, collapsed, shortcut, angle and bare-URL autolinks |
-| **Images** | from `res://` and `user://`, optionally scaled |
-| **Tables** | GFM pipe tables with per-column alignment |
-| **Text** | thematic breaks, hard line breaks, backslash escapes, HTML entities |
+| **Headings** | ATX (`#`–`######`) and setext (`===` / `---`) |
+| **Inline formatting** | emphasis, strong, bold+italic, strikethrough (`~~text~~`), rounded inline code pills |
+| **Links** | inline, reference, shortcut, angle and permissive autolinks, hover highlight & click signals |
+| **Lists** | ordered (custom start index), unordered, nested, tight/loose, interactive GFM task checklists |
+| **Blockquotes & callouts** | nested blockquotes, GitHub Alerts (`NOTE`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION`), custom titles (`> [!TIP] Pro Tip`), custom kinds (`> [!QUEST]`, `> [!LORE]`) |
+| **Code blocks** | fenced (`` ``` `` / `~~~`) and indented, optional wrapping or clipped horizontal scroll |
+| **Tables** | two-pass auto-sized GFM pipe tables with left/center/right alignment and narrow-container clamping |
+| **Images** | inline icons scaled to text height and standalone block banners via `image_resolver` or `res://`, with alt-text fallback |
+| **Breaks & escapes** | thematic breaks (`---`), hard/soft line breaks, `<br>` / `<br/>`, backslash escapes, HTML entities |
 
-### Deliberate limits
+### Deliberate non-goals
 
-Four things this addon will not do, and why:
+- **No syntax highlighting** inside code blocks.
+- **No LaTeX / math** or **animated GIF / APNG** decoding.
+- **No arbitrary raw HTML/CSS layout** — `<br>` / `<br/>` become hard line breaks; all other raw HTML tags and blocks are safely omitted.
+- **No Web / WASM target** and **no network I/O or `OS.shell_open`**.
 
-- **Images are local only.** A `res://` or `user://` path the project can load
-  becomes an `[img]`. Anything else, a remote URL included, renders as its
-  alternate text linked to the URL. Shipping an HTTP client inside a text
-  renderer would make every rendered document a potential network request.
-- **Raw HTML renders as literal text.** A `RichTextLabel` cannot lay out HTML,
-  and passing tags through would mean inventing a mapping per element.
-- **Emphasis resolution is forward-searching, not CommonMark's delimiter
-  stack.** Every ordinary nesting resolves identically. Pathological
-  overlapping runs such as `*foo**bar*baz**` render as literal text rather than
-  being guessed at.
-- **No syntax highlighting.** A fence's info string is parsed and available on
-  the tree; `show_code_language` prints it above the block. Highlighting a
-  dozen languages is a different project.
+## Building & testing
 
-## Performance
-
-A full conversion of a 40-line document, on an M3 Pro, median of 30 samples:
-
-| Stage | Median |
-| --- | --- |
-| Block parsing | 0.45 ms |
-| Inline expansion | 0.42 ms |
-| BBCode emission | 0.18 ms |
-| **Full conversion** | **1.10 ms** |
-
-Conversion happens once per assignment to `markdown`, not per frame, so this is
-a load-time cost rather than a frame-time one. Run `task bench` to measure on
-your own hardware.
-
-## Developing
-
-Requires [gdkit](https://github.com/cafecito-games/gdkit) 0.11.0 or newer for
-linting, formatting and license headers,
-[gpm](https://github.com/cafecito-games/godot-package-manager) 0.6.0 or newer
-to install the test runner, and Godot 4.7.
+Requires [Task](https://taskfile.dev/), [SCons](https://scons.org/), a C++17
+toolchain (Xcode for macOS/iOS, Android NDK for Android, GCC/Clang for Linux),
+[gdkit](https://github.com/cafecito-games/gdkit) `0.11.0+`,
+[gpm](https://github.com/cafecito-games/godot-package-manager) `0.6.0+`, and
+Godot `4.6+` (pinned to `4.7.2` in CI).
 
 ```sh
-gpm install          # installs the gdtest runner into addons/gdtest
-task lint            # gdkit format, lint, license and uid checks
-task test            # 169 cases across six suites
-task bench           # timings for each pipeline stage
-task demo            # open the interactive demo
-task screenshots     # regenerate the images in this README
-task verify:package  # cut and verify a release archive without publishing
+# Install gdtest runner
+task install
+
+# Build native GDExtension binaries
+task macos               # addons/gdmarkdown/bin/macos_arm64/gdmarkdown.framework
+task ios                 # addons/gdmarkdown/bin/ios/gdmarkdown.xcframework (device + sim)
+task android             # arm64, arm32, and x86_64 Android .so libraries
+task linux               # linux_x86_64 / linux_arm64 .so libraries
+
+# Test and verify
+task test:native         # fast headless C++ unit tests (parser, callouts, table sizing)
+task test:extension-load # throwaway Godot project load probe
+task test:gdscript       # full gdtest integration suite
+task lint                # gdkit format, lint, license, and uid checks
+task verify:package      # cut and verify all 8 gpm slices + reproducibility
+
+# Showcase, benchmarks, and screenshots
+task demo                        # open the interactive showcase
+./addons/gdtest/gdtest bench     # run parse and layout benchmarks
+task screenshots                 # regenerate docs/images/*.png (needs GPU context)
 ```
 
-Releases are cut by the **Release** workflow: pick `patch`, `minor`, or
-`major`, and the version is derived from the latest tag, injected into
-`plugin.cfg` and the changelog, verified, committed, tagged and published. See
-[docs/releasing.md](docs/releasing.md). Write changelog entries under
-`## [Unreleased]` as you go — that section becomes the release body, and a
-release with it empty is refused.
-
-Every GDScript warning Godot 4.7 offers is enabled as an **error** in
-`project.godot`, including `untyped_declaration`, `inferred_declaration` and
-the four `unsafe_*` warnings, and `gdkit lint` additionally requires return,
-argument, variable, collection, loop-variable and signal-argument types. There
-is no `:=` and no implicit `Variant` anywhere in the addon, by construction
-rather than by review.
-
-`docs/architecture.md` explains the pipeline and the trade-offs behind it.
+See [docs/architecture.md](docs/architecture.md) for the native C++ pipeline and
+[docs/releasing.md](docs/releasing.md) for the automated release workflow.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
 
-Every GDScript file carries an SPDX header that `gdkit license` manages and CI
-verifies, so the licensing travels with any file someone copies out of the
-addon:
+Every GDScript file carries an SPDX header managed by `gdkit license` and
+verified in CI:
 
 ```gdscript
 # gdkit:license:begin

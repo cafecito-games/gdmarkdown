@@ -2,12 +2,13 @@
 #
 # This file is deliberately not at the repository root. gpm has no exclusion
 # mechanism: every file under addon_path that no .gdextension key claims lands in
-# the core slice. Keeping the manifest out of the root makes a bare
-# `gpm package` fail loudly instead of publishing an unintended tree, and
-# scripts/package-addon stages the shippable files before packaging them.
+# the core slice, which every consumer downloads on every platform. Keeping the
+# manifest out of the root makes a bare `gpm package` fail loudly instead of
+# publishing an unintended tree, and scripts/package-addon stages the shippable
+# addon tree before packaging it.
 #
-# gdmarkdown is pure GDScript, so it publishes a single mandatory core slice and
-# no platform slices.
+# Every native binary is declared under [libraries] in gdmarkdown.gdextension, so
+# gpm infers all platform slices automatically with no [package.slices] rules.
 
 [package]
 name       = "gdmarkdown"

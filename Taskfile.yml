@@ -5,6 +5,67 @@ tasks:
     desc: Run the full verification gate
     deps: [lint, test]
 
+  macos:
+    desc: Build the macOS arm64 native GDExtension framework
+    cmds:
+      - ./scripts/build-native macos
+
+  ios:
+    desc: Build and sign the iOS device + simulator dynamic xcframework
+    cmds:
+      - ./scripts/build-native ios
+
+  android:
+    desc: Build the Android arm64, arm32, and x86_64 native libraries
+    cmds:
+      - ./scripts/build-native android {{.CLI_ARGS}}
+
+  linux:
+    desc: Build the Linux native GDExtension library
+    cmds:
+      - ./scripts/build-native linux {{.CLI_ARGS}}
+
+  native:
+    desc: Build all native targets supported by the current host
+    cmds:
+      - cmd: |
+          case "$(uname -s)" in
+            Darwin)
+              ./scripts/build-native macos
+              ./scripts/build-native ios
+              ./scripts/build-native android
+              ;;
+            Linux)
+              ./scripts/build-native linux
+              ;;
+            *)
+              echo "Unsupported host OS: $(uname -s)" >&2
+              exit 1
+              ;;
+          esac
+
+  test:native:
+    desc: Compile and run headless C++ unit tests
+    cmds:
+      - ./scripts/build-native test-native
+
+  test:extension-load:
+    desc: Load the addon in a throwaway Godot project and assert native classes register
+    cmds:
+      - ./scripts/test-gdextension-load
+
+  test:gdscript:
+    desc: Run the gdtest integration suite
+    cmds:
+      - ./addons/gdtest/gdtest run
+
+  test:
+    desc: Run native, extension-load, and GDScript test suites
+    cmds:
+      - task: test:native
+      - task: test:extension-load
+      - task: test:gdscript
+
   lint:
     desc: Check GDScript formatting, lint rules, license headers and uid:// sidecars
     cmds:
@@ -33,25 +94,33 @@ tasks:
     cmds:
       - gpm install
 
-  test:
-    desc: Run the gdtest suite
-    cmds:
-      - ./addons/gdtest/gdtest run
-
   package:
-    desc: Cut a gpm release archive into dist/
+    desc: Cut gpm platform slice archives into dist/
     cmds:
-      - ./scripts/package-addon
+      - ./scripts/package-addon {{.CLI_ARGS}}
 
   verify:package:
-    desc: Cut and verify a release package without publishing it
+    desc: Verify slice packaging contract and byte-for-byte reproducibility
     cmds:
       - ./scripts/verify-package {{.VERSION | default "0.0.0"}}
 
-  bench:
-    desc: Run the gdtest benchmarks
+  vendor:
+    desc: Sync the runtime gdmarkdown addon into a consumer project (DEST=/path/to/project)
+    silent: true
     cmds:
-      - ./addons/gdtest/gdtest bench
+      - cmd: |
+          set -euo pipefail
+          destination="{{.DEST}}"
+          if [ -z "${destination}" ]; then
+            echo "ERROR: DEST is required. Usage: task vendor DEST=/path/to/consumer-project" >&2
+            exit 1
+          fi
+          staging_directory="$(mktemp -d)"
+          trap 'rm -rf "${staging_directory}"' EXIT
+          ./scripts/stage-addon-tree "${staging_directory}" >/dev/null
+          mkdir -p "${destination}/addons/gdmarkdown"
+          rsync -a --delete "${staging_directory}/addons/gdmarkdown/" "${destination}/addons/gdmarkdown/"
+          echo "Vendored gdmarkdown into ${destination}/addons/gdmarkdown/"
 
   demo:
     desc: Run the interactive demo
@@ -62,3 +131,15 @@ tasks:
     desc: Regenerate the README screenshots in docs/images
     cmds:
       - ./scripts/capture-screenshots
+
+  clean:
+    desc: Remove native build outputs and dist archives
+    cmds:
+      - rm -rf
+          addons/gdmarkdown/bin
+          native/build
+          native/.sconsign.dblite
+          native/third_party/godot-cpp/bin
+          native/third_party/godot-cpp/gen
+          native/third_party/godot-cpp/.sconsign.dblite
+          dist

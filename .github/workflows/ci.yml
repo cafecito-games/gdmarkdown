@@ -5,11 +5,22 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential scons libfontconfig1
 
       - uses: actions/setup-go@v5
         with:
@@ -19,18 +30,22 @@ jobs:
         run: |
           go install github.com/cafecito-games/gdkit/cmd/gdkit@v0.11.0
           go install github.com/cafecito-games/godot-package-manager/cmd/gpm@v0.6.0
-          # gdkit's version string is the contract the checks below rely on;
-          # `license` only exists from 0.11.0, so assert rather than discover it
-          # halfway through a run.
           gdkit_version=$(gdkit --version)
           [[ "$gdkit_version" == "gdkit version 0.11.0"* ]]
 
       - name: Install pinned Godot 4.7.2
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libfontconfig1
           scripts/install-godot-linux-ci "$RUNNER_TEMP/godot-bin/godot"
           echo "$RUNNER_TEMP/godot-bin" >> "$GITHUB_PATH"
+
+      - name: Run C++ unit tests
+        run: scripts/build-native test-native
+
+      - name: Build Linux x86_64 native library
+        run: scripts/build-native linux x86_64
+
+      - name: Check Linux GDExtension load
+        run: scripts/test-gdextension-load
 
       - name: Check formatting
         run: gdkit format check .
@@ -47,10 +62,10 @@ jobs:
       - name: Install pinned addons
         run: gpm install --host-only
 
-      - name: Run tests
+      - name: Run GDScript integration tests
         run: ./addons/gdtest/gdtest run --no-daemon --report-format junit --report-file report.xml
 
-      - name: Verify the release package cuts cleanly
+      - name: Verify the release package contract
         run: scripts/verify-package 0.0.0
 
       - name: Upload test report
@@ -59,3 +74,65 @@ jobs:
         with:
           name: gdtest-report
           path: report.xml
+
+  build-apple:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install SCons
+        run: brew install scons
+
+      - name: Set up Godot 4.7.2
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.7.2
+          use-dotnet: false
+          include-templates: false
+
+      - name: Run C++ unit tests
+        run: scripts/build-native test-native
+
+      - name: Build macOS arm64 framework
+        run: scripts/build-native macos
+
+      - name: Check macOS GDExtension load
+        run: scripts/test-gdextension-load
+
+      - name: Build iOS xcframework
+        run: scripts/build-native ios
+
+  build-android:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install SCons
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq scons
+
+      - name: Build Android native libraries
+        run: scripts/build-native android
+
+  build-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential scons
+
+      - name: Build Linux arm64 native library
+        run: scripts/build-native linux arm64

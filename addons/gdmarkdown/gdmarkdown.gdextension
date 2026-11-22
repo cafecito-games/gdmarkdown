@@ -1,0 +1,19 @@
+[configuration]
+entry_symbol = "gdmarkdown_entry_point"
+compatibility_minimum = "4.6"
+reloadable = true
+
+[libraries]
+ios.debug              = "res://addons/gdmarkdown/bin/ios/gdmarkdown.xcframework"
+ios.release            = "res://addons/gdmarkdown/bin/ios/gdmarkdown.xcframework"
+ios.simulator.debug    = "res://addons/gdmarkdown/bin/ios/gdmarkdown.xcframework"
+ios.simulator.release  = "res://addons/gdmarkdown/bin/ios/gdmarkdown.xcframework"
+macos.arm64            = "res://addons/gdmarkdown/bin/macos_arm64/gdmarkdown.framework"
+android.debug.arm64    = "res://addons/gdmarkdown/bin/android/libgdmarkdown.android.release.arm64.so"
+android.release.arm64  = "res://addons/gdmarkdown/bin/android/libgdmarkdown.android.release.arm64.so"
+android.debug.arm32    = "res://addons/gdmarkdown/bin/android/libgdmarkdown.android.release.arm32.so"
+android.release.arm32  = "res://addons/gdmarkdown/bin/android/libgdmarkdown.android.release.arm32.so"
+android.debug.x86_64   = "res://addons/gdmarkdown/bin/android/libgdmarkdown.android.release.x86_64.so"
+android.release.x86_64 = "res://addons/gdmarkdown/bin/android/libgdmarkdown.android.release.x86_64.so"
+linux.x86_64           = "res://addons/gdmarkdown/bin/linux_x86_64/libgdmarkdown.so"
+linux.arm64            = "res://addons/gdmarkdown/bin/linux_arm64/libgdmarkdown.so"

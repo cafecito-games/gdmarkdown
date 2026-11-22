@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Loads the gdmarkdown addon in a throwaway Godot project and asserts that Godot
+# resolves the native GDExtension library for the host platform and registers
+# MarkdownView, MarkdownTheme, and MarkdownCalloutStyle.
+#
+# The host platform's declared library must be present for the check to mean
+# anything, so local checkouts without a built binary skip cleanly, while CI
+# treats a missing Godot binary or unbuilt library as fatal.
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+addon_directory="${repository_root}/addons/gdmarkdown"
+gdextension_file="${addon_directory}/gdmarkdown.gdextension"
+
+fail() {
+	echo "FAIL: $*" >&2
+	exit 1
+}
+
+godot_executable=""
+for candidate in "${GODOT_BIN:-}" "${GODOT:-}" godot godot4; do
+	[[ -n "${candidate}" ]] || continue
+	if command -v "${candidate}" >/dev/null 2>&1; then
+		godot_executable="$(command -v "${candidate}")"
+		break
+	fi
+done
+
+if [[ -z "${godot_executable}" ]]; then
+	if [[ -n "${CI:-}" ]]; then
+		fail "no Godot binary found; CI must load the addon against a real Godot build."
+	fi
+	echo "SKIP: no Godot binary found; skipping the GDExtension load check."
+	exit 0
+fi
+
+case "$(uname -s)" in
+	Linux) platform="linux" ;;
+	Darwin) platform="macos" ;;
+	MINGW* | MSYS* | CYGWIN*) platform="windows" ;;
+	*) fail "unsupported host platform: $(uname -s)" ;;
+esac
+
+case "$(uname -m)" in
+	x86_64 | amd64) architecture="x86_64" ;;
+	arm64 | aarch64) architecture="arm64" ;;
+	*) fail "unsupported host architecture: $(uname -m)" ;;
+esac
+
+library_entry="$(sed -n "s|^${platform}\.${architecture}[[:space:]]*=[[:space:]]*\"res://addons/gdmarkdown/\(.*\)\"[[:space:]]*$|\1|p" "${gdextension_file}")"
+[[ -n "${library_entry}" ]] \
+	|| fail "the .gdextension declares no library for ${platform}.${architecture}"
+
+if [[ ! -e "${addon_directory}/${library_entry}" ]]; then
+	if [[ -n "${CI:-}" ]]; then
+		fail "${library_entry} is not built; CI must load-check a real library."
+	fi
+	echo "SKIP: ${library_entry} is not built; run 'task ${platform}' first to load-check this host."
+	exit 0
+fi
+
+project_directory="$(mktemp -d)"
+trap 'rm -rf "${project_directory}"' EXIT
+
+mkdir -p "${project_directory}/addons" "${project_directory}/.godot"
+cp -R "${addon_directory}" "${project_directory}/addons/gdmarkdown"
+printf 'res://addons/gdmarkdown/gdmarkdown.gdextension\n' >"${project_directory}/.godot/extension_list.cfg"
+
+cat >"${project_directory}/project.godot" <<'EOF'
+config_version=5
+
+[application]
+config/name="GdmarkdownExtensionLoadProbe"
+EOF
+
+cat >"${project_directory}/probe.gd" <<'EOF'
+extends SceneTree
+
+
+func _init() -> void:
+	var required_classes: Array[StringName] = [
+		&"MarkdownView",
+		&"MarkdownTheme",
+		&"MarkdownCalloutStyle",
+	]
+	for class_symbol: StringName in required_classes:
+		if not ClassDB.class_exists(class_symbol):
+			printerr("MISSING_CLASS: " + String(class_symbol))
+			quit(1)
+			return
+	print("EXTENSION_LOAD_PROBE_OK")
+	quit(0)
+EOF
+
+output="$("${godot_executable}" --headless --path "${project_directory}" --script probe.gd 2>&1 || true)"
+
+if grep -q "No GDExtension library found" <<<"${output}"; then
+	echo "${output}" >&2
+	fail "Godot found no GDExtension library for ${platform}.${architecture}"
+fi
+if grep -Eq "Can't open dynamic library|GDExtension dynamic library not found|Failed to open GDExtension" <<<"${output}"; then
+	echo "${output}" >&2
+	fail "Godot could not load the GDExtension library for ${platform}.${architecture}"
+fi
+if grep -q "MISSING_CLASS:" <<<"${output}"; then
+	echo "${output}" >&2
+	fail "GDExtension loaded without registering all expected classes"
+fi
+if ! grep -q "EXTENSION_LOAD_PROBE_OK" <<<"${output}"; then
+	echo "${output}" >&2
+	fail "the probe project did not reach its script; Godot may have failed to start"
+fi
+
+echo "GDExtension load check passed for ${platform}.${architecture}"

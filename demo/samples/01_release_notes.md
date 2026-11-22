@@ -1,25 +1,30 @@
-# Deep Harbor 1.4
+# Deep Harbor — Patch 2.4
 
-*Released 9 November 2026*
+*Released 22 November 2026 · Build `2.4.0-rc3`*
 
-The **grapple hook** no longer clips through walls, and the second boss phase
-should feel fair now. Full notes below.
+> [!IMPORTANT] Save Compatibility
+> Existing harbor saves migrate automatically on first load. Rollbacks to `2.3.x` are not supported once you dock at **Bellwatch Pier**.
 
-## Fixed
+The **grapple hook** no longer clips through thin seawalls, lantern physics stay steady at high frame rates, and the second boss phase now gives a clearer windup cue.
 
-- Grapple hook clipping through thin walls
-- Save files written during a cutscene losing inventory
-- Ambient audio not ducking under dialogue
+> [!TIP] Harbor Shortcut
+> Hold `Shift` while reeling in the line to vault directly onto catwalk ledges without spending stamina.
 
-## Changed
+## Balance Changes
 
-- Lowered the harbor boss health by `15%`
-- Slowed its second phase telegraph from `0.4s` to `0.7s`
-- Reworded three quest descriptions for clarity
+| Encounter / Tool | Category | Previous | New | Delta |
+| :--------------- | :------: | -------: | --: | ----: |
+| Sunken Leviathan (Phase 2) | Boss HP | `4,200` | `3,570` | `-15%` |
+| Abyssal Slam Telegraph | Timing | `0.40s` | `0.70s` | `+75%` |
+| Brass Grapple Reel Speed | Mobility | `18 m/s` | `21 m/s` | `+17%` |
+| Saltwater Tonic Cooldown | Consumable | `12.0s` | `9.5s` | `-21%` |
 
-## Known issues
+## Release Checklist
 
-> Controller rumble is still inverted on some third-party pads. A fix is
-> queued for 1.4.1.
+- [x] Fix grapple hook clipping through thin dock bulkheads
+- [x] Prevent cutscene autosaves from clearing quick-slot inventory
+- [x] Duck ambient surf audio cleanly beneath NPC dialogue lines
+- [ ] Calibrate inverted rumble curves on third-party gamepads (`2.4.1`)
 
-Report anything new at https://example.com/issues or email <team@example.com>.
+> [!NOTE]
+> Full telemetry notes live in the [Harbor Changelog](https://example.com/harbor) or via <support@example.com>.

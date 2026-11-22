@@ -1,7 +1,27 @@
-# Release notes
+# Release Notes v2.0
 
-A paragraph with *emphasis*, **strong emphasis**, ~~strikethrough~~, a
-`code span`, and a [link](https://example.com "Project home").
+A paragraph with *emphasis*, **strong emphasis**, ***bold italic***,
+~~strikethrough~~, an `inline_code()` span, a
+[project link](https://example.com "Project home"), and an inline icon
+![coin](icon://gold).
+
+> [!NOTE]
+> Native C++ rendering via `md4c` and Godot `TextParagraph`.
+
+> [!TIP] Pro Tip
+> Customize typography and spacing through `MarkdownTheme`.
+
+> [!IMPORTANT]
+> Set `interactive_tasks = true` to allow clicking task checkboxes.
+
+> [!WARNING]
+> Very narrow tables shrink column widths proportionally.
+
+> [!CAUTION]
+> Raw `<script>alert("blocked")</script>` HTML is stripped safely.
+
+> [!QUEST] Dragon's Hoard
+> Gather 3 embers and return before dusk.
 
 ## Changes
 
@@ -16,26 +36,34 @@ A paragraph with *emphasis*, **strong emphasis**, ~~strikethrough~~, a
 
 ### Tasks
 
-- [x] Shipped the patch
+- [x] Shipped the native renderer
 - [ ] Write the postmortem
+- [x] Verified callout alerts
 
 > A quoted remark.
 >
 > > And a nested one.
 
 ```gdscript
-var total: int = 0
+func compute_total(items: Array[int]) -> int:
+	var total: int = 0
+	for value: int in items:
+		total += value
+	return total
 ```
 
 | Item | Count | Price |
 | :--- | :---: | ----: |
 | Rope | 2 | 10 |
-| Hook | 1 | 25 |
+| Grappling Hook | 1 | 25 |
+| Lantern Oil | 4 | 8 |
+
+![Banner preview](icon://banner "Banner")
 
 ---
 
 Visit https://example.com or email <team@example.com>. Literal \*asterisks\*
-and entities like &hellip; pass through. A line ending in two spaces  
+and entities like &hellip; pass through. A line ending with a tag<br/>
 breaks hard.
 
 [docs]: https://example.com/docs

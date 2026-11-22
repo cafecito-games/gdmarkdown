@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+import os
+import sys
+
+env = SConscript("third_party/godot-cpp/SConstruct")
+
+env.Append(CPPPATH=["src", "third_party/md4c"])
+
+# Enforce C++17 for our C++ sources while keeping md4c compiled as C99.
+if env.get("is_msvc", False):
+    env.Append(CXXFLAGS=["/std:c++17"])
+else:
+    env.Append(CXXFLAGS=["-std=c++17", "-Wall", "-Wextra", "-Wno-unused-parameter"])
+    env.Append(CFLAGS=["-std=c99", "-O2"])
+
+# Dynamic framework install name on Apple platforms so both macOS .framework
+# and iOS dynamic .xcframework slices load cleanly via @rpath.
+platform = env["platform"]
+arch = env["arch"]
+target = env["target"]
+
+if platform in ("macos", "ios"):
+    env.Append(LINKFLAGS=["-Wl,-install_name,@rpath/gdmarkdown.framework/gdmarkdown"])
+
+cpp_sources = [
+    "src/register_types.cpp",
+    "src/parser/markdown_parser.cpp",
+    "src/layout/table_sizing.cpp",
+    "src/layout/layout_engine.cpp",
+    "src/nodes/markdown_callout_style.cpp",
+    "src/nodes/markdown_theme.cpp",
+    "src/nodes/markdown_view.cpp",
+]
+c_sources = [
+    "third_party/md4c/md4c.c",
+]
+
+sources = cpp_sources + c_sources
+
+# Embed Godot Editor Help (F1) XML documentation on desktop builds only so
+# mobile binaries stay lean while desktop editor sessions get full class docs.
+if platform in ("macos", "linux", "windows"):
+    doc_data = env.GodotCPPDocData(
+        "build/doc_data.gen.cpp",
+        sorted(Glob("doc_classes/*.xml"), key=str),
+    )
+    sources = sources + list(doc_data)
+
+if platform == "macos":
+    output_path = f"build/macos_{arch}/libgdmarkdown.macos.{target}.{arch}{env['SHLIBSUFFIX']}"
+elif platform == "ios":
+    simulator_tag = "simulator" if env.get("ios_simulator", False) else "device"
+    output_path = f"build/ios_{simulator_tag}_{arch}/libgdmarkdown.ios.{simulator_tag}.{target}.{arch}{env['SHLIBSUFFIX']}"
+elif platform == "android":
+    output_path = f"build/android_{arch}/libgdmarkdown.android.{target}.{arch}{env['SHLIBSUFFIX']}"
+elif platform == "linux":
+    output_path = f"build/linux_{arch}/libgdmarkdown.linux.{target}.{arch}{env['SHLIBSUFFIX']}"
+else:
+    output_path = f"build/{platform}_{arch}/libgdmarkdown.{platform}.{target}.{arch}{env['SHLIBSUFFIX']}"
+
+library = env.SharedLibrary(target=output_path, source=sources)
+Default(library)

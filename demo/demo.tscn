@@ -1,21 +1,6 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://demo/demo.gd" id="1_demo"]
-[ext_resource type="Script" path="res://addons/gdmarkdown/markdown_label.gd" id="2_label"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_sidebar"]
-bg_color = Color(0.13, 0.14, 0.18, 1)
-corner_radius_top_left = 10
-corner_radius_top_right = 10
-corner_radius_bottom_right = 10
-corner_radius_bottom_left = 10
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_preview"]
-bg_color = Color(0.11, 0.12, 0.16, 1)
-corner_radius_top_left = 10
-corner_radius_top_right = 10
-corner_radius_bottom_right = 10
-corner_radius_bottom_left = 10
 
 [node name="Demo" type="Control"]
 layout_mode = 3
@@ -27,13 +12,14 @@ grow_vertical = 2
 script = ExtResource("1_demo")
 
 [node name="Background" type="ColorRect" parent="."]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.09, 0.1, 0.13, 1)
+color = Color(0.043, 0.055, 0.078, 1)
 
 [node name="Margin" type="MarginContainer" parent="."]
 layout_mode = 1
@@ -42,91 +28,278 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/margin_left = 20
+theme_override_constants/margin_left = 16
 theme_override_constants/margin_top = 16
-theme_override_constants/margin_right = 20
-theme_override_constants/margin_bottom = 20
+theme_override_constants/margin_right = 16
+theme_override_constants/margin_bottom = 16
 
 [node name="Layout" type="VBoxContainer" parent="Margin"]
 layout_mode = 2
-theme_override_constants/separation = 14
-
-[node name="Header" type="HBoxContainer" parent="Margin/Layout"]
-layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="Margin/Layout/Header"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 22
-text = "gdmarkdown"
-
-[node name="Subtitle" type="Label" parent="Margin/Layout/Header"]
-layout_mode = 2
-size_flags_horizontal = 3
-size_flags_vertical = 4
-theme_override_colors/font_color = Color(0.56, 0.59, 0.66, 1)
-text = "Markdown in a RichTextLabel"
-
-[node name="StyleLabel" type="Label" parent="Margin/Layout/Header"]
-layout_mode = 2
-size_flags_vertical = 4
-theme_override_colors/font_color = Color(0.56, 0.59, 0.66, 1)
-text = "Style"
-
-[node name="StylePicker" type="OptionButton" parent="Margin/Layout/Header"]
-custom_minimum_size = Vector2(150, 0)
+[node name="ToolbarPanel" type="PanelContainer" parent="Margin/Layout"]
+unique_name_in_owner = true
 layout_mode = 2
 
-[node name="Body" type="HSplitContainer" parent="Margin/Layout"]
+[node name="ToolbarMargin" type="MarginContainer" parent="Margin/Layout/ToolbarPanel"]
 layout_mode = 2
-size_flags_vertical = 3
-split_offset = 190
-theme_override_constants/separation = 14
-
-[node name="Sidebar" type="PanelContainer" parent="Margin/Layout/Body"]
-custom_minimum_size = Vector2(160, 0)
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_sidebar")
-
-[node name="SidebarMargin" type="MarginContainer" parent="Margin/Layout/Body/Sidebar"]
-layout_mode = 2
-theme_override_constants/margin_left = 8
+theme_override_constants/margin_left = 14
 theme_override_constants/margin_top = 8
-theme_override_constants/margin_right = 8
+theme_override_constants/margin_right = 14
 theme_override_constants/margin_bottom = 8
 
-[node name="DocumentList" type="ItemList" parent="Margin/Layout/Body/Sidebar/SidebarMargin"]
+[node name="Toolbar" type="HBoxContainer" parent="Margin/Layout/ToolbarPanel/ToolbarMargin"]
 layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Wordmark" type="Label" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 16
+text = "gdmarkdown"
+
+[node name="VersionBadge" type="PanelContainer" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="VersionLabel" type="Label" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar/VersionBadge"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "v2"
+
+[node name="DividerPrimary" type="ColorRect" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 20)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="ThemeLabel" type="Label" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 12
+text = "Theme"
+
+[node name="ThemePicker" type="OptionButton" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(146, 30)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="DividerSecondary" type="ColorRect" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 20)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="InteractiveTasksToggle" type="CheckButton" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 12
+text = "Tasks"
+
+[node name="WrapCodeToggle" type="CheckButton" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 12
+button_pressed = true
+text = "Wrap Code"
+
+[node name="LiveEditorToggle" type="CheckButton" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 12
+text = "Live Editor"
+
+[node name="Spacer" type="Control" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="DividerTertiary" type="ColorRect" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(1, 20)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="TypewriterButton" type="Button" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(84, 28)
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 12
+text = "Typewriter"
+
+[node name="TypewriterSlider" type="HSlider" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(104, 20)
+layout_mode = 2
+size_flags_vertical = 4
+max_value = 1.0
+step = 0.005
+value = 1.0
+
+[node name="TypewriterValue" type="Label" parent="Margin/Layout/ToolbarPanel/ToolbarMargin/Toolbar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 12
+text = "100%"
+horizontal_alignment = 2
+
+[node name="BodySplit" type="HSplitContainer" parent="Margin/Layout"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_constants/separation = 12
+
+[node name="SidebarPanel" type="PanelContainer" parent="Margin/Layout/BodySplit"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(216, 0)
+layout_mode = 2
+
+[node name="SidebarMargin" type="MarginContainer" parent="Margin/Layout/BodySplit/SidebarPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 12
+
+[node name="SidebarLayout" type="VBoxContainer" parent="Margin/Layout/BodySplit/SidebarPanel/SidebarMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="SidebarHeading" type="Label" parent="Margin/Layout/BodySplit/SidebarPanel/SidebarMargin/SidebarLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "DOCUMENTS"
+
+[node name="DocumentList" type="ItemList" parent="Margin/Layout/BodySplit/SidebarPanel/SidebarMargin/SidebarLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
 theme_override_constants/v_separation = 6
 allow_reselect = true
 
-[node name="PreviewPanel" type="PanelContainer" parent="Margin/Layout/Body"]
+[node name="SidebarFooter" type="Label" parent="Margin/Layout/BodySplit/SidebarPanel/SidebarMargin/SidebarLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "Native C++ MarkdownView"
+autowrap_mode = 2
+
+[node name="WorkspaceSplit" type="HSplitContainer" parent="Margin/Layout/BodySplit"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_styles/panel = SubResource("StyleBoxFlat_preview")
+size_flags_vertical = 3
+theme_override_constants/separation = 12
 
-[node name="PreviewMargin" type="MarginContainer" parent="Margin/Layout/Body/PreviewPanel"]
+[node name="EditorPanel" type="PanelContainer" parent="Margin/Layout/BodySplit/WorkspaceSplit"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(340, 0)
 layout_mode = 2
-theme_override_constants/margin_left = 28
+size_flags_horizontal = 3
+
+[node name="EditorMargin" type="MarginContainer" parent="Margin/Layout/BodySplit/WorkspaceSplit/EditorPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="EditorLayout" type="VBoxContainer" parent="Margin/Layout/BodySplit/WorkspaceSplit/EditorPanel/EditorMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="EditorHeader" type="HBoxContainer" parent="Margin/Layout/BodySplit/WorkspaceSplit/EditorPanel/EditorMargin/EditorLayout"]
+layout_mode = 2
+
+[node name="EditorHeading" type="Label" parent="Margin/Layout/BodySplit/WorkspaceSplit/EditorPanel/EditorMargin/EditorLayout/EditorHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 11
+text = "MARKDOWN SOURCE"
+
+[node name="EditorStats" type="Label" parent="Margin/Layout/BodySplit/WorkspaceSplit/EditorPanel/EditorMargin/EditorLayout/EditorHeader"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "0 lines"
+
+[node name="SourceEditor" type="CodeEdit" parent="Margin/Layout/BodySplit/WorkspaceSplit/EditorPanel/EditorMargin/EditorLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 13
+wrap_mode = 1
+gutters_draw_line_numbers = true
+
+[node name="PreviewPanel" type="PanelContainer" parent="Margin/Layout/BodySplit/WorkspaceSplit"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="PreviewMargin" type="MarginContainer" parent="Margin/Layout/BodySplit/WorkspaceSplit/PreviewPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 32
 theme_override_constants/margin_top = 24
-theme_override_constants/margin_right = 28
+theme_override_constants/margin_right = 24
 theme_override_constants/margin_bottom = 24
 
-[node name="Scroll" type="ScrollContainer" parent="Margin/Layout/Body/PreviewPanel/PreviewMargin"]
+[node name="PreviewScroll" type="ScrollContainer" parent="Margin/Layout/BodySplit/WorkspaceSplit/PreviewPanel/PreviewMargin"]
+unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="Preview" type="RichTextLabel" parent="Margin/Layout/Body/PreviewPanel/PreviewMargin/Scroll"]
-custom_minimum_size = Vector2(740, 0)
+[node name="Preview" type="MarkdownView" parent="Margin/Layout/BodySplit/WorkspaceSplit/PreviewPanel/PreviewMargin/PreviewScroll"]
+unique_name_in_owner = true
 layout_mode = 2
-script = ExtResource("2_label")
-size_flags_horizontal = 4
+size_flags_horizontal = 3
 size_flags_vertical = 3
-bbcode_enabled = true
-fit_content = true
-selection_enabled = true
 
-[node name="Status" type="Label" parent="Margin/Layout"]
+[node name="StatusBar" type="PanelContainer" parent="Margin/Layout"]
+unique_name_in_owner = true
 layout_mode = 2
-theme_override_font_sizes/font_size = 13
-text = "Click a link to see what the host receives."
+
+[node name="StatusMargin" type="MarginContainer" parent="Margin/Layout/StatusBar"]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 7
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 7
+
+[node name="StatusLayout" type="HBoxContainer" parent="Margin/Layout/StatusBar/StatusMargin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="StatusDot" type="Panel" parent="Margin/Layout/StatusBar/StatusMargin/StatusLayout"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(8, 8)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="StatusEvent" type="Label" parent="Margin/Layout/StatusBar/StatusMargin/StatusLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 12
+text = "Ready — hover or click links, toggle tasks, or open the Live Editor."
+
+[node name="StatusStats" type="Label" parent="Margin/Layout/StatusBar/StatusMargin/StatusLayout"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+theme_override_font_sizes/font_size = 12
+text = "0 chars · 0 tasks · 0 px"

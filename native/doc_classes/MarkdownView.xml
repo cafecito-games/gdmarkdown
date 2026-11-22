@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MarkdownView" inherits="Control" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd">
+	<brief_description>
+		Native CommonMark and GitHub Flavored Markdown renderer [Control].
+	</brief_description>
+	<description>
+		Renders CommonMark, GitHub Flavored Markdown (tables, strikethrough, task lists, permissive autolinks), and GitHub/Obsidian callouts ([code]&gt; [!NOTE][/code], [code]&gt; [!TIP][/code], [code]&gt; [!IMPORTANT][/code], [code]&gt; [!WARNING][/code], [code]&gt; [!CAUTION][/code], and custom kinds) directly onto its own canvas via Godot's [TextServer] and [RenderingServer].
+		The control reports its laid-out document height through [method Control._get_minimum_size], so placing it inside a [ScrollContainer] or [VBoxContainer] with horizontal expand sizing lets it wrap to the available width and grow vertically automatically. When nested inside a [ScrollContainer], primitives outside the visible vertical band are culled automatically.
+		Raw HTML blocks and tags are safely ignored except for [code]&lt;br&gt;[/code] tags, which are treated as hard line breaks.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="clear_image_cache">
+			<return type="void" />
+			<description>
+				Clears all cached image resolutions (including negative misses) and triggers a layout rebuild so images are resolved again through [member image_resolver] or [code]res://[/code].
+			</description>
+		</method>
+		<method name="get_plain_text">
+			<return type="String" />
+			<description>
+				Returns the concatenated plain-text representation of the document with Markdown formatting stripped, with logical blocks separated by newlines. Ensures layout is up to date before returning.
+			</description>
+		</method>
+		<method name="get_task_count" qualifiers="const">
+			<return type="int" />
+			<description>
+				Returns the total number of GFM task-list items ([code]- [ ][/code] / [code]- [x][/code]) parsed in the current [member markdown] document.
+			</description>
+		</method>
+		<method name="get_total_character_count">
+			<return type="int" />
+			<description>
+				Returns the total number of countable characters in the laid-out document used for typewriter progression via [member visible_characters] and [member visible_ratio]. Ensures layout is up to date before returning.
+			</description>
+		</method>
+		<method name="is_task_checked" qualifiers="const">
+			<return type="bool" />
+			<param index="0" name="task_index" type="int" />
+			<description>
+				Returns [code]true[/code] if the task item at [param task_index] (in document order, zero-based) is currently checked. Returns [code]false[/code] if [param task_index] is out of range.
+			</description>
+		</method>
+		<method name="set_task_checked">
+			<return type="void" />
+			<param index="0" name="task_index" type="int" />
+			<param index="1" name="checked" type="bool" />
+			<description>
+				Programmatically updates the checked state of the task item at [param task_index] and queues a redraw. Does not emit [signal task_toggled] and does nothing if [param task_index] is out of range.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="code_block_wrap" type="bool" setter="set_code_block_wrap" getter="is_code_block_wrap" default="true">
+			If [code]true[/code], long lines in code blocks wrap within the available width. If [code]false[/code], overflowing code blocks become horizontally scrollable via click-drag, horizontal mouse wheel, Shift+wheel, or trackpad pan gestures.
+		</member>
+		<member name="image_resolver" type="Callable" setter="set_image_resolver" getter="get_image_resolver" default="Callable()">
+			Optional [Callable] with signature [code]func(uri: String) -&gt; Texture2D[/code] used to resolve Markdown image URIs. If unset or returning [code]null[/code], URIs starting with [code]res://[/code] are loaded automatically via [ResourceLoader]. Results are cached until [method clear_image_cache] is called or [member image_resolver] is changed.
+		</member>
+		<member name="interactive_tasks" type="bool" setter="set_interactive_tasks" getter="is_interactive_tasks" default="false">
+			If [code]true[/code], clicking a task-list checkbox toggles its state, redraws the checkbox, and emits [signal task_toggled]. Also switches the mouse cursor to a pointing hand over checkboxes.
+		</member>
+		<member name="markdown" type="String" setter="set_markdown" getter="get_markdown" default="&quot;&quot;">
+			The Markdown source text to parse and render. Setting this property re-parses the document, resets task states to the source document's initial checkmarks, and triggers a layout rebuild.
+		</member>
+		<member name="markdown_theme" type="MarkdownTheme" setter="set_markdown_theme" getter="get_markdown_theme">
+			Optional [MarkdownTheme] resource controlling fonts, colors, spacing, styles, and callouts. When [code]null[/code], an internal dark default theme ([method MarkdownTheme.create_dark]) is used. Changes to the assigned theme automatically trigger re-layout and redraw.
+		</member>
+		<member name="visible_characters" type="int" setter="set_visible_characters" getter="get_visible_characters" default="-1">
+			Limits how many characters of the document are drawn for typewriter-style reveals. A value of [code]-1[/code] (or any negative number, normalized to [code]-1[/code]) displays the entire document. Synchronizes [member visible_ratio].
+		</member>
+		<member name="visible_ratio" type="float" setter="set_visible_ratio" getter="get_visible_ratio" default="1.0">
+			Normalized fraction in [code][0.0, 1.0][/code] of the document to display. Setting this value updates [member visible_characters] proportionally ([code]1.0[/code] sets [member visible_characters] to [code]-1[/code]).
+		</member>
+	</members>
+	<signals>
+		<signal name="layout_updated">
+			<description>
+				Emitted whenever the document layout is rebuilt (after changing [member markdown], [member markdown_theme], [member code_block_wrap], [member image_resolver], or resizing the control width).
+			</description>
+		</signal>
+		<signal name="link_clicked">
+			<param index="0" name="url" type="String" />
+			<description>
+				Emitted when the user left-clicks a Markdown hyperlink or linked image, passing its decoded destination [param url].
+			</description>
+		</signal>
+		<signal name="link_hovered">
+			<param index="0" name="url" type="String" />
+			<description>
+				Emitted when the hovered hyperlink changes. [param url] is the link destination when entering a link, or an empty [String] when leaving all links or exiting the control.
+			</description>
+		</signal>
+		<signal name="task_toggled">
+			<param index="0" name="task_index" type="int" />
+			<param index="1" name="checked" type="bool" />
+			<description>
+				Emitted when the user clicks a task-list checkbox while [member interactive_tasks] is [code]true[/code], reporting the zero-based [param task_index] and its new [param checked] state.
+			</description>
+		</signal>
+	</signals>
+</class>

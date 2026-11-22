@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MarkdownTheme" inherits="Resource" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd">
+	<brief_description>
+		Typography, color palette, box metrics, [StyleBox] overrides, and callout definitions for [MarkdownView].
+	</brief_description>
+	<description>
+		A reusable [Resource] that controls every visual aspect of a [MarkdownView]. Use [method create_dark] or [method create_light] for ready-made presets, or save a custom [code].tres[/code] resource in the Inspector.
+		Fonts fall back gracefully: if [member regular_font] is [code]null[/code], [MarkdownView] uses Godot's default UI font; if [member bold_font], [member italic_font], or [member bold_italic_font] are [code]null[/code], synthetic [FontVariation] faces (embolden and/or oblique slant) are generated automatically.
+		Any property change—including edits to a [MarkdownCalloutStyle] stored inside [member callouts]—emits [signal Resource.changed] so attached [MarkdownView] controls re-layout and redraw immediately.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="create_dark" qualifiers="static">
+			<return type="MarkdownTheme" />
+			<description>
+				Creates and returns a new [MarkdownTheme] initialized with the built-in dark color palette and dark-mode callout presets.
+			</description>
+		</method>
+		<method name="create_light" qualifiers="static">
+			<return type="MarkdownTheme" />
+			<description>
+				Creates and returns a new [MarkdownTheme] initialized with the built-in light color palette and light-mode callout presets.
+			</description>
+		</method>
+		<method name="get_callout_style" qualifiers="const">
+			<return type="MarkdownCalloutStyle" />
+			<param index="0" name="kind" type="String" />
+			<description>
+				Returns the [MarkdownCalloutStyle] registered for [param kind] (trimmed and matched case-insensitively). If no explicit entry exists, returns a synthesized fallback [MarkdownCalloutStyle] with a capitalized title and [member blockquote_accent_color] (or [member muted_color]) as its accent color.
+			</description>
+		</method>
+		<method name="get_heading_scale" qualifiers="const">
+			<return type="float" />
+			<param index="0" name="level" type="int" />
+			<description>
+				Returns the font-size multiplier for heading [param level] (clamped to [code]1..6[/code]). Falls back to the built-in default scale ([code]1.85, 1.5, 1.25, 1.1, 1.0, 0.9[/code]) if [member heading_scales] does not contain a positive value for that level.
+			</description>
+		</method>
+		<method name="set_callout_style">
+			<return type="void" />
+			<param index="0" name="kind" type="String" />
+			<param index="1" name="style" type="MarkdownCalloutStyle" />
+			<description>
+				Registers or updates the [MarkdownCalloutStyle] for [param kind] (trimmed and normalized to uppercase). Passing [code]null[/code] removes any registered style for [param kind]. Connects [signal Resource.changed] on the style so subsequent edits invalidate the theme.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="base_font_size" type="int" setter="set_base_font_size" getter="get_base_font_size" default="16">
+			Base body font size in pixels (clamped to at least [code]1[/code]). Heading sizes, code sizes, and all [code]*_em[/code] spacing metrics scale relative to this value.
+		</member>
+		<member name="blockquote_accent_color" type="Color" setter="set_blockquote_accent_color" getter="get_blockquote_accent_color" default="Color(0.38, 0.46, 0.58, 1)">
+			Color of the vertical left accent bar drawn on blockquotes, and the default fallback accent color for unregistered callout kinds.
+		</member>
+		<member name="blockquote_accent_width" type="float" setter="set_blockquote_accent_width" getter="get_blockquote_accent_width" default="3.0">
+			Width in pixels of the vertical left accent bar on blockquotes. Set to [code]0.0[/code] to hide the accent bar.
+		</member>
+		<member name="blockquote_bg_color" type="Color" setter="set_blockquote_bg_color" getter="get_blockquote_bg_color" default="Color(0.14, 0.17, 0.22, 0.65)">
+			Background fill color for blockquotes when [member blockquote_style] is [code]null[/code]. Set alpha to [code]0.0[/code] for a transparent background.
+		</member>
+		<member name="blockquote_indent_em" type="float" setter="set_blockquote_indent_em" getter="get_blockquote_indent_em" default="1.0">
+			Outer horizontal indentation factor for blockquotes, scaled by [member base_font_size].
+		</member>
+		<member name="blockquote_padding" type="float" setter="set_blockquote_padding" getter="get_blockquote_padding" default="10.0">
+			Inner padding in pixels around blockquote content.
+		</member>
+		<member name="blockquote_style" type="StyleBox" setter="set_blockquote_style" getter="get_blockquote_style">
+			Optional [StyleBox] drawn behind blockquotes. When [code]null[/code], a procedural rounded panel using [member blockquote_bg_color] and [member corner_radius] is drawn.
+		</member>
+		<member name="bold_font" type="Font" setter="set_bold_font" getter="get_bold_font">
+			Optional bold font used for headings, strong emphasis, callout titles, and table headers. When [code]null[/code], a synthetic emboldened [FontVariation] is derived from [member regular_font].
+		</member>
+		<member name="bold_italic_font" type="Font" setter="set_bold_italic_font" getter="get_bold_italic_font">
+			Optional bold-italic font. When [code]null[/code], a synthetic [FontVariation] is derived from [member bold_font], [member italic_font], or [member regular_font].
+		</member>
+		<member name="callout_accent_width" type="float" setter="set_callout_accent_width" getter="get_callout_accent_width" default="4.0">
+			Width in pixels of the vertical left accent bar on callout panels.
+		</member>
+		<member name="callout_icon_size" type="float" setter="set_callout_icon_size" getter="get_callout_icon_size" default="16.0">
+			Width and height in pixels of the callout header icon (clamped to at least [code]4.0[/code]).
+		</member>
+		<member name="callout_padding" type="float" setter="set_callout_padding" getter="get_callout_padding" default="12.0">
+			Inner padding in pixels around callout header and body content.
+		</member>
+		<member name="callouts" type="Dictionary" setter="set_callouts" getter="get_callouts">
+			Dictionary mapping uppercase callout kind strings (such as [code]"NOTE"[/code], [code]"TIP"[/code], [code]"IMPORTANT"[/code], [code]"WARNING"[/code], [code]"CAUTION"[/code]) to [MarkdownCalloutStyle] resources. Keys assigned through [method set_callouts] are trimmed and uppercased, and non-[MarkdownCalloutStyle] values are ignored.
+		</member>
+		<member name="code_bg_color" type="Color" setter="set_code_bg_color" getter="get_code_bg_color" default="Color(0.11, 0.13, 0.17, 1)">
+			Background fill color for fenced and indented code blocks when [member code_block_style] is [code]null[/code].
+		</member>
+		<member name="code_block_padding" type="float" setter="set_code_block_padding" getter="get_code_block_padding" default="12.0">
+			Inner padding in pixels around code block text.
+		</member>
+		<member name="code_block_style" type="StyleBox" setter="set_code_block_style" getter="get_code_block_style">
+			Optional [StyleBox] drawn behind code blocks. When [code]null[/code], a procedural rounded panel using [member code_bg_color], [member rule_color], and [member corner_radius] is drawn.
+		</member>
+		<member name="code_font_scale" type="float" setter="set_code_font_scale" getter="get_code_font_scale" default="0.9">
+			Multiplier applied to the surrounding font size for inline code spans and code blocks (clamped to at least [code]0.1[/code]).
+		</member>
+		<member name="code_text_color" type="Color" setter="set_code_text_color" getter="get_code_text_color" default="Color(0.89, 0.78, 0.56, 1)">
+			Foreground text color for inline code spans and code blocks.
+		</member>
+		<member name="corner_radius" type="float" setter="set_corner_radius" getter="get_corner_radius" default="6.0">
+			Corner radius in pixels used by procedural rounded panels (code blocks, blockquotes, callouts, tables, and inline code pills up to [code]4.0[/code] px).
+		</member>
+		<member name="heading_bottom_spacing_em" type="float" setter="set_heading_bottom_spacing_em" getter="get_heading_bottom_spacing_em" default="0.4">
+			Vertical spacing in ems inserted after a heading block before the next sibling block.
+		</member>
+		<member name="heading_color" type="Color" setter="set_heading_color" getter="get_heading_color" default="Color(0.98, 0.99, 1, 1)">
+			Text color used for headings ([code]H1[/code]–[code]H6[/code]) and table header cells.
+		</member>
+		<member name="heading_scales" type="PackedFloat32Array" setter="set_heading_scales" getter="get_heading_scales" default="PackedFloat32Array(1.85, 1.5, 1.25, 1.1, 1, 0.9)">
+			Font-size multipliers for heading levels 1 through 6, applied to [member base_font_size]. Missing or non-positive entries fall back to the defaults via [method get_heading_scale].
+		</member>
+		<member name="heading_top_spacing_em" type="float" setter="set_heading_top_spacing_em" getter="get_heading_top_spacing_em" default="1.1">
+			Vertical spacing in ems inserted above a heading block when it is not the first block in its container.
+		</member>
+		<member name="inline_code_bg_color" type="Color" setter="set_inline_code_bg_color" getter="get_inline_code_bg_color" default="Color(0.18, 0.21, 0.27, 0.95)">
+			Background fill color for inline code pills when [member inline_code_style] is [code]null[/code].
+		</member>
+		<member name="inline_code_padding_horizontal" type="float" setter="set_inline_code_padding_horizontal" getter="get_inline_code_padding_horizontal" default="5.0">
+			Horizontal padding in pixels added on each side of inline code spans.
+		</member>
+		<member name="inline_code_padding_vertical" type="float" setter="set_inline_code_padding_vertical" getter="get_inline_code_padding_vertical" default="1.5">
+			Vertical padding in pixels expanding inline code pill backgrounds above and below the line height.
+		</member>
+		<member name="inline_code_style" type="StyleBox" setter="set_inline_code_style" getter="get_inline_code_style">
+			Optional [StyleBox] drawn behind inline code spans. When [code]null[/code], a procedural rounded pill using [member inline_code_bg_color] is drawn.
+		</member>
+		<member name="inline_image_scale" type="float" setter="set_inline_image_scale" getter="get_inline_image_scale" default="1.15">
+			Target height of inline images expressed as a multiple of the surrounding font size (clamped to at least [code]0.1[/code]).
+		</member>
+		<member name="italic_font" type="Font" setter="set_italic_font" getter="get_italic_font">
+			Optional italic font. When [code]null[/code], a synthetic slanted [FontVariation] is derived from [member regular_font].
+		</member>
+		<member name="line_spacing" type="float" setter="set_line_spacing" getter="get_line_spacing" default="4.0">
+			Extra vertical spacing in pixels inserted between wrapped lines inside paragraphs, headings, tables, and code blocks.
+		</member>
+		<member name="link_color" type="Color" setter="set_link_color" getter="get_link_color" default="Color(0.42, 0.7, 1, 1)">
+			Text and underline color for hyperlinks in their resting state.
+		</member>
+		<member name="link_hover_color" type="Color" setter="set_link_hover_color" getter="get_link_hover_color" default="Color(0.62, 0.82, 1, 1)">
+			Text and underline color for the currently hovered hyperlink.
+		</member>
+		<member name="list_indent_em" type="float" setter="set_list_indent_em" getter="get_list_indent_em" default="1.5">
+			Horizontal indentation per list nesting level in ems (clamped to at least [code]0.25[/code]). Also reserves space for bullets, numbers, or task checkboxes.
+		</member>
+		<member name="list_item_spacing_em" type="float" setter="set_list_item_spacing_em" getter="get_list_item_spacing_em" default="0.3">
+			Vertical spacing in ems between items in a tight list. Loose lists use [member paragraph_spacing_em].
+		</member>
+		<member name="max_image_height" type="float" setter="set_max_image_height" getter="get_max_image_height" default="420.0">
+			Maximum rendered height in pixels for standalone block images (clamped to at least [code]1.0[/code]). Aspect ratio is preserved when downscaling.
+		</member>
+		<member name="monospace_font" type="Font" setter="set_monospace_font" getter="get_monospace_font">
+			Optional monospace font for inline code and code blocks. Falls back to [member regular_font] (or Godot's default font) when [code]null[/code].
+		</member>
+		<member name="muted_color" type="Color" setter="set_muted_color" getter="get_muted_color" default="Color(0.6, 0.65, 0.72, 1)">
+			Secondary color used for list markers, unresolved image alt text, code-block scroll thumbs, and blockquote/strikethrough tint blending.
+		</member>
+		<member name="paragraph_spacing_em" type="float" setter="set_paragraph_spacing_em" getter="get_paragraph_spacing_em" default="0.75">
+			Vertical spacing in ems between consecutive sibling blocks (paragraphs, lists, tables, code blocks, callouts, and loose list items).
+		</member>
+		<member name="regular_font" type="Font" setter="set_regular_font" getter="get_regular_font">
+			Optional base body font. When [code]null[/code], [MarkdownView] falls back to the control's default theme font.
+		</member>
+		<member name="rule_color" type="Color" setter="set_rule_color" getter="get_rule_color" default="Color(0.26, 0.3, 0.37, 0.9)">
+			Color of thematic breaks ([code]---[/code]) and the default 1 px border around procedural code blocks.
+		</member>
+		<member name="rule_thickness" type="float" setter="set_rule_thickness" getter="get_rule_thickness" default="1.0">
+			Height in pixels of thematic break horizontal rules (clamped to at least [code]0.5[/code]).
+		</member>
+		<member name="strikethrough_color" type="Color" setter="set_strikethrough_color" getter="get_strikethrough_color" default="Color(0.6, 0.65, 0.72, 0.85)">
+			Stroke color of the horizontal line drawn through [code]~~strikethrough~~[/code] spans.
+		</member>
+		<member name="table_alt_row_bg_color" type="Color" setter="set_table_alt_row_bg_color" getter="get_table_alt_row_bg_color" default="Color(0.13, 0.16, 0.21, 0.55)">
+			Background fill color applied to alternating body rows in tables. Set alpha to [code]0.0[/code] to disable zebra striping.
+		</member>
+		<member name="table_border_color" type="Color" setter="set_table_border_color" getter="get_table_border_color" default="Color(0.25, 0.29, 0.36, 1)">
+			Color of table outer borders and internal horizontal/vertical cell dividers.
+		</member>
+		<member name="table_cell_padding_horizontal" type="float" setter="set_table_cell_padding_horizontal" getter="get_table_cell_padding_horizontal" default="10.0">
+			Preferred horizontal padding in pixels on each side of a table cell. Automatically clamped on very narrow tables so every column keeps at least [code]1.0[/code] px of text width.
+		</member>
+		<member name="table_cell_padding_vertical" type="float" setter="set_table_cell_padding_vertical" getter="get_table_cell_padding_vertical" default="7.0">
+			Vertical padding in pixels above and below content inside each table cell.
+		</member>
+		<member name="table_header_bg_color" type="Color" setter="set_table_header_bg_color" getter="get_table_header_bg_color" default="Color(0.16, 0.19, 0.25, 1)">
+			Background fill color for table header rows when [member table_header_style] is [code]null[/code].
+		</member>
+		<member name="table_header_style" type="StyleBox" setter="set_table_header_style" getter="get_table_header_style">
+			Optional [StyleBox] drawn behind table header rows instead of [member table_header_bg_color].
+		</member>
+		<member name="table_style" type="StyleBox" setter="set_table_style" getter="get_table_style">
+			Optional [StyleBox] drawn as the outer frame of tables. When [code]null[/code], a procedural rounded border using [member table_border_color] and [member corner_radius] is drawn.
+		</member>
+		<member name="task_checked_color" type="Color" setter="set_task_checked_color" getter="get_task_checked_color" default="Color(0.29, 0.78, 0.52, 1)">
+			Fill color of checked task-list checkboxes ([code]- [x][/code]).
+		</member>
+		<member name="task_unchecked_color" type="Color" setter="set_task_unchecked_color" getter="get_task_unchecked_color" default="Color(0.48, 0.53, 0.62, 1)">
+			Outline color of unchecked task-list checkboxes ([code]- [ ][/code]).
+		</member>
+		<member name="text_color" type="Color" setter="set_text_color" getter="get_text_color" default="Color(0.9, 0.92, 0.95, 1)">
+			Default body text color for paragraphs, lists, table cells, and callout bodies.
+		</member>
+	</members>
+</class>

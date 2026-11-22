@@ -207,11 +207,11 @@ The primary scene node.
 5. For each column `c`, clamp horizontal cell padding so inner text width is always strictly positive:
    `effective_pad_h = std::min(cell_padding_h, std::max(0.0f, (col_w[c] - 1.0f) * 0.5f))`
    `text_w = std::max(1.0f, col_w[c] - 2.0f * effective_pad_h)`
-   Shape every cell `TextParagraph` at `text_w` with its `HorizontalAlignment` (`LEFT`, `CENTER`, `RIGHT`) and `BREAK_MANDATORY | BREAK_WORD_BOUND | BREAK_GRAPHEME_BOUND`.
+   Shape every cell `TextParagraph` at `text_w` with its `HorizontalAlignment` (`LEFT`, `CENTER`, `RIGHT`) and `BREAK_MANDATORY | BREAK_WORD_BOUND | BREAK_ADAPTIVE`.
 6. Row height = `max(cell_height) + 2 * cell_padding_v`. Paint table card background, header row fill, alternating row tint, grid dividers, and outer border cleanly.
 
 ### Code Blocks (Wrap + Optional Horizontal Scroll)
-- When `code_block_wrap == true`: `TextParagraph` wraps at `inner_width` (`BREAK_MANDATORY | BREAK_WORD_BOUND | BREAK_GRAPHEME_BOUND`).
+- When `code_block_wrap == true`: `TextParagraph` wraps at `inner_width` (`BREAK_MANDATORY | BREAK_WORD_BOUND | BREAK_ADAPTIVE`).
 - When `code_block_wrap == false`: `TextParagraph` uses `BREAK_MANDATORY` only (`width = -1`), measuring natural line width `content_width`. If `content_width > inner_width`, the code block stores a clamped `scroll_x` (`0 .. content_width - inner_width`), draws into a lightweight child `RID` canvas item configured with **both** `canvas_item_set_custom_rect(child_rid, true, Rect2(Vector2(), inner_rect.size))` and `canvas_item_set_clip(child_rid, true)` positioned at `inner_rect.position`, draws a subtle horizontal scrollbar thumb at the bottom edge, and accepts horizontal wheel (`MOUSE_BUTTON_WHEEL_LEFT`/`RIGHT`, Shift+wheel) and horizontal touch/mouse drag inside the block rect. All child `RID`s are freed on re-layout, `NOTIFICATION_EXIT_TREE`, and destructor.
 
 ### Typewriter Reveal (`visible_characters` / `visible_ratio`)

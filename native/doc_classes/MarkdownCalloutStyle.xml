@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MarkdownCalloutStyle" inherits="Resource" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://raw.githubusercontent.com/godotengine/godot/master/doc/class.xsd">
+	<brief_description>
+		Visual styling resource for a single callout kind in a [MarkdownTheme].
+	</brief_description>
+	<description>
+		Defines the default title, accent color, title color, optional icon texture, and optional background [StyleBox] used to render a GitHub/Obsidian-style callout block (such as [code]&gt; [!NOTE][/code], [code]&gt; [!TIP][/code], [code]&gt; [!IMPORTANT][/code], [code]&gt; [!WARNING][/code], [code]&gt; [!CAUTION][/code], or a custom kind).
+		Instances are stored in [member MarkdownTheme.callouts] keyed by uppercase kind name (for example [code]"NOTE"[/code] or [code]"LORE"[/code]). Modifying any property emits [signal Resource.changed], which automatically triggers a layout and redraw on any [MarkdownView] using the owning [MarkdownTheme].
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="create" qualifiers="static">
+			<return type="MarkdownCalloutStyle" />
+			<param index="0" name="title" type="String" />
+			<param index="1" name="accent_color" type="Color" />
+			<param index="2" name="title_color" type="Color" default="Color(0, 0, 0, 0)" />
+			<param index="3" name="icon" type="Texture2D" default="null" />
+			<param index="4" name="panel_style" type="StyleBox" default="null" />
+			<description>
+				Creates and returns a new [MarkdownCalloutStyle] configured with the given [param title], [param accent_color], and optional [param title_color], [param icon], and [param panel_style].
+			</description>
+		</method>
+		<method name="resolve_title_color" qualifiers="const">
+			<return type="Color" />
+			<description>
+				Returns [member title_color] if its alpha channel is greater than [code]0.0[/code]; otherwise returns [member accent_color].
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="accent_color" type="Color" setter="set_accent_color" getter="get_accent_color" default="Color(0.35, 0.62, 0.98, 1)">
+			Primary accent color used for the callout's left accent bar, default translucent panel tint and border (when [member panel_style] is [code]null[/code]), and fallback title/icon color when [member title_color] is transparent.
+		</member>
+		<member name="icon" type="Texture2D" setter="set_icon" getter="get_icon">
+			Optional custom icon drawn to the left of the callout header title. When [code]null[/code], a crisp procedural vector icon is drawn for the five built-in callout kinds ([code]NOTE[/code], [code]TIP[/code], [code]IMPORTANT[/code], [code]WARNING[/code], [code]CAUTION[/code]) and a diamond badge is drawn for custom kinds.
+		</member>
+		<member name="panel_style" type="StyleBox" setter="set_panel_style" getter="get_panel_style">
+			Optional [StyleBox] drawn as the callout container background. When [code]null[/code], a procedural rounded panel tinted from [member accent_color] is drawn instead.
+		</member>
+		<member name="title" type="String" setter="set_title" getter="get_title" default="&quot;&quot;">
+			Default header title displayed when the Markdown callout directive does not specify a custom title (for example [code]&gt; [!NOTE][/code]). If empty, the callout kind name is capitalized as a fallback.
+		</member>
+		<member name="title_color" type="Color" setter="set_title_color" getter="get_title_color" default="Color(0, 0, 0, 0)">
+			Explicit color for the callout header title and procedural icon. When its alpha channel is [code]0.0[/code] (the default), [method resolve_title_color] falls back to [member accent_color].
+		</member>
+	</members>
+</class>
