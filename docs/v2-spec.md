@@ -10,7 +10,7 @@ The design is inspired by [gonzalezreal/textual](https://github.com/gonzalezreal
 - **In-game Markdown rendering** with clean, crisp, game-ready visuals out of the box and full Inspector theming (`MarkdownTheme`, `MarkdownCalloutStyle`).
 - **Full CommonMark + GFM core** via `md4c`: headings (H1–H6), paragraphs, emphasis, strong, strikethrough, inline code, fenced & indented code blocks, links, autolinks, blockquotes, ordered/unordered/nested lists, task lists, tables (with column alignment), thematic breaks, hard/soft breaks, and block/inline images.
 - **GitHub Alerts & Extensible Callouts**: built-in `NOTE`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION` plus custom titles (`> [!TIP] Pro Tip`) and game-registered callout kinds (`> [!QUEST]`, `> [!LORE]`).
-- **One portable C++ codebase** targeting **macOS (`arm64`)**, **iOS (`arm64` device + simulator `.xcframework`)**, **Android (`arm64-v8a`, `armeabi-v7a`, `x86_64` `.so`)**, and **Linux (`x86_64`, `arm64` `.so`)** — with **no** `SwiftGodot` dependency, **no** Java/Gradle AARs, and **no** desktop stubs.
+- **One portable C++ codebase** targeting **macOS (`arm64`)**, **iOS (`arm64` device + simulator dynamic `.xcframework`, Godot 4.6+)**, **Android (`arm64-v8a`, `armeabi-v7a`, `x86_64` `.so`)**, and **Linux (`x86_64`, `arm64` `.so`)** — with **no** `SwiftGodot` dependency, **no** Java/Gradle AARs, and **no** desktop stubs.
 - **Cafecito packaging & quality conventions** mirroring `AuthenticationKit` and `PurchaseKit`: `Taskfile.yml`, `packaging/gpm-package.toml` (out of repo root), `scripts/stage-addon-tree`, `scripts/package-addon`, `scripts/sign-ios-frameworks`, `scripts/test-gdextension-load`, `gdkit`, and `gdtest`.
 
 ### Explicit Non-Goals (v2.0)
@@ -30,7 +30,7 @@ The design is inspired by [gonzalezreal/textual](https://github.com/gonzalezreal
 ## 2. Markdown Dialect & Parsing (`md4c`)
 
 ### Upstream Dependencies
-- **`godot-cpp`**: pinned to `godot-4.4-stable` (`compatibility_minimum = "4.4"` in `.gdextension`, forward-compatible with Godot 4.4 through 4.7.2+).
+- **`godot-cpp`**: pinned to `godot-4.5-stable` with `compatibility_minimum = "4.6"` in `.gdextension` (requires Godot 4.6+, verified on Godot 4.7.2, matching `PurchaseKit`'s Godot 4.6+ dynamic iOS `.xcframework` support).
 - **`md4c`**: vendored MIT-licensed C99 source (`md4c.c`, `md4c.h`, `LICENSE.md`) at `v0.6.0` under `native/third_party/md4c/`.
 
 ### Parser Flags
@@ -68,15 +68,15 @@ Pure C++ structs (no Godot headers required, enabling fast headless C++ unit tes
 
 ### Callout Detection Post-Pass
 After `md4c` builds the block tree, a recursive post-pass inspects every `BlockQuote`:
-1. Check if `children[0]` is a `Paragraph` whose leading plain text (not inside code/link/emphasis) matches `^[!([A-Za-z][A-Za-z0-9_-]*)](\+|-)?(?:[ \t]+([^\n]*))?` up to the first `SoftBreak`, `HardBreak`, or end of paragraph.
+1. Check if `children[0]` is a `Paragraph` whose leading plain text (not inside code/link/emphasis) matches the directive syntax `^\[!([A-Za-z][A-Za-z0-9_-]*)\](\+|-)?(?:[ \t]+([^\n]*))?` (implemented with a direct, zero-regex hand-written scanner) up to the first `SoftBreak`, `HardBreak`, or end of paragraph.
 2. If matched:
    - Promote `BlockQuote` → `Callout` with `kind` uppercased (e.g., `"NOTE"`, `"QUEST"`).
    - Capture optional `collapsible` / `initially_collapsed` (`+` or `-`) and `custom_title` (trimmed).
    - Strip the directive header (and its trailing break if present) from `children[0]`; if `children[0]` is now empty, erase it from `children`.
 3. Recurse into all container blocks (`BlockQuote`, `Callout`, `ListItem`) so nested callouts work cleanly.
 
-### Task Indexing
-During parsing/post-pass, assign a sequential 0-based `task_index` to every `ListItem` where `is_task == true` in depth-first document order. Runtime checkbox toggles are stored in a `std::vector<bool> task_overrides` on `MarkdownView` so toggling a checkbox updates visually without re-parsing Markdown.
+### Task Indexing & Lifecycle
+During parsing/post-pass, assign a sequential 0-based `task_index` to every `ListItem` where `is_task == true` in depth-first document order. Runtime checkbox states are stored in `std::vector<bool> task_states` on `MarkdownView` so toggling a checkbox updates visually without re-parsing Markdown. Whenever `markdown` is reassigned (or cleared), `task_states` is **cleared and repopulated from the newly parsed document's initial task states**, so toggled states from a prior document can never leak onto a replacement document.
 
 ---
 
@@ -179,9 +179,12 @@ The primary scene node.
 - On `NOTIFICATION_RESIZED`, if `std::abs(new_width - last_layout_width) > 0.5f`, re-run layout for `new_width`, update `layout_height`, call `update_minimum_size()`, and `queue_redraw()`.
 - Before first layout with a positive width (e.g. headless unit tests or freshly added nodes), fall back to `custom_minimum_size.x > 0 ? custom_minimum_size.x : 400.0f`.
 
-### Text Shaping (`TextParagraph`)
+### Text Shaping & Per-Span Glyph Rendering (`TextParagraph` + `TextServer`)
 - Every text leaf (paragraph, heading, list item text, code block text, table cell, callout title) shapes into a `Ref<TextParagraph>`.
-- Inline font switching selects `regular_font`, `bold_font`, `italic_font`, `bold_italic_font`, or `monospace_font` (with graceful synthesis/fallback if a specialized variant isn't provided).
+- Inline font switching selects `regular_font`, `bold_font`, `italic_font`, `bold_italic_font`, or `monospace_font` (with graceful fallback if a specialized variant isn't provided).
+- **Per-span colors (links, link hover, inline code, muted text)**:
+  - Because `TextParagraph::draw()` paints an entire paragraph with one color, rich paragraphs render line-by-line by querying `TextServer::shaped_text_get_glyphs(paragraph->get_line_rid(line))` and drawing each glyph with `TextServer::font_draw_glyph()` using the color of the inline span containing `glyph.start` (Godot logical character index).
+  - Plain single-color blocks (e.g., code blocks and callout titles) may draw directly via `TextParagraph::draw()` when no typewriter cutoff is active inside them.
 - **Inline code pills**:
   - Insert zero-draw spacer objects (`add_object(spacer_key, Vector2(inline_code_padding_h, 1.0), INLINE_ALIGNMENT_CENTER, 1)`) around each inline code run so surrounding words never crowd the pill edge.
   - Record each code run's logical character range `[start, end)` (in Godot `String` / UTF-32 code-point offsets) and compute per-line pill rectangles from `TextServer::shaped_text_get_selection(line_rid, start, end)` during layout.
@@ -191,7 +194,7 @@ The primary scene node.
 - **Inline Images**:
   - Resolved once via `image_resolver` (if valid) → `ResourceLoader` (for `res://` paths only) → cached in an internal `HashMap<String, Ref<Texture2D>>`.
   - Inserted into `TextParagraph` via `add_object(image_key, display_size, INLINE_ALIGNMENT_CENTER, 1)` where `display_size` is height-scaled to `font_size * inline_image_scale` preserving aspect ratio.
-  - Drawn at `TextParagraph::get_object_rect(image_key)` offset by paragraph origin.
+  - Located per line by iterating `line` in `0 .. get_line_count() - 1`, inspecting `get_line_objects(line)`, and calling `get_line_object_rect(line, image_key)` offset by the line/paragraph origin.
   - If an image fails to resolve, emit its `alt` text cleanly as a styled fallback.
 - **Block Images**:
   - Centered or left-aligned texture scaled to fit `min(available_width, texture_width)` and `max_image_height` preserving aspect ratio, with rounded corners or clean framing.
@@ -199,22 +202,25 @@ The primary scene node.
 ### Table Auto-Layout (Two-Pass)
 1. Measure each cell's unwrapped width (`max_w`) and minimum breakable width (`min_w`, clamped to a reasonable floor like `48px + 2 * cell_padding_h`).
 2. Aggregate per-column `col_min[c]` and `col_max[c]`.
-3. If `sum(col_max) <= available_width`, use `col_max` (optionally expanding up to `available_width` when close, or hugging cleanly).
-4. Otherwise, allocate `col_min[c]` plus a proportional share of `available_width - sum(col_min)` weighted by `col_max[c] - col_min[c]` (if `sum(col_min) > available_width`, scale `col_min` proportionally so the table always fits within the container).
-5. Shape every cell `TextParagraph` at `col_w[c] - 2 * cell_padding_h` with its `HorizontalAlignment` (`LEFT`, `CENTER`, `RIGHT`).
+3. If `sum(col_max) <= available_width`, use `col_max` (or expand cleanly up to `available_width`).
+4. Otherwise, allocate `col_min[c]` plus a proportional share of `available_width - sum(col_min)` weighted by `col_max[c] - col_min[c]`. If `sum(col_min) > available_width`, scale `col_min` proportionally so `sum(col_w) <= available_width`.
+5. For each column `c`, clamp horizontal cell padding so inner text width is always strictly positive:
+   `effective_pad_h = std::min(cell_padding_h, std::max(0.0f, (col_w[c] - 1.0f) * 0.5f))`
+   `text_w = std::max(1.0f, col_w[c] - 2.0f * effective_pad_h)`
+   Shape every cell `TextParagraph` at `text_w` with its `HorizontalAlignment` (`LEFT`, `CENTER`, `RIGHT`) and `BREAK_MANDATORY | BREAK_WORD_BOUND | BREAK_GRAPHEME_BOUND`.
 6. Row height = `max(cell_height) + 2 * cell_padding_v`. Paint table card background, header row fill, alternating row tint, grid dividers, and outer border cleanly.
 
 ### Code Blocks (Wrap + Optional Horizontal Scroll)
 - When `code_block_wrap == true`: `TextParagraph` wraps at `inner_width` (`BREAK_MANDATORY | BREAK_WORD_BOUND | BREAK_GRAPHEME_BOUND`).
-- When `code_block_wrap == false`: `TextParagraph` uses `BREAK_MANDATORY` only (`width = -1`), measuring natural line width `content_width`. If `content_width > inner_width`, the code block stores a clamped `scroll_x` (`0 .. content_width - inner_width`), draws clipped to its inner rect (via a lightweight child `RID` canvas item with `canvas_item_set_clip(true)`), draws a subtle horizontal scrollbar thumb at the bottom edge, and accepts horizontal wheel (`MOUSE_BUTTON_WHEEL_LEFT`/`RIGHT`, Shift+wheel) and horizontal touch/mouse drag inside the block rect.
+- When `code_block_wrap == false`: `TextParagraph` uses `BREAK_MANDATORY` only (`width = -1`), measuring natural line width `content_width`. If `content_width > inner_width`, the code block stores a clamped `scroll_x` (`0 .. content_width - inner_width`), draws into a lightweight child `RID` canvas item configured with **both** `canvas_item_set_custom_rect(child_rid, true, Rect2(Vector2(), inner_rect.size))` and `canvas_item_set_clip(child_rid, true)` positioned at `inner_rect.position`, draws a subtle horizontal scrollbar thumb at the bottom edge, and accepts horizontal wheel (`MOUSE_BUTTON_WHEEL_LEFT`/`RIGHT`, Shift+wheel) and horizontal touch/mouse drag inside the block rect. All child `RID`s are freed on re-layout, `NOTIFICATION_EXIT_TREE`, and destructor.
 
 ### Typewriter Reveal (`visible_characters` / `visible_ratio`)
 - Each text-bearing laid-out item records its cumulative character range `[char_start, char_end)` in document order, and `total_characters` is cached on the layout.
 - When `visible_characters >= 0 && visible_characters < total_characters`:
   - Items with `char_end <= visible_characters` draw normally.
   - Items with `char_start >= visible_characters` are skipped (along with empty containers/rules after the frontier).
-  - The **single frontier item** (`char_start < visible_characters < char_end`) is shaped into a cached scratch `TextParagraph` with identical text and fonts, **except** characters at or after the local cutoff use `Color(0, 0, 0, 0)` (transparent).
-  - **Result:** words never jump between lines mid-word as they type out, and re-shaping only one paragraph per tick is essentially free (<0.05ms).
+  - The **single frontier item** (`char_start < visible_characters < char_end`) uses the same per-glyph `shaped_text_get_glyphs()` draw loop without any re-shaping: glyphs with `glyph.start >= local_cutoff` simply advance `pen_x` without calling `font_draw_glyph()` (and inline objects/pills/decorations past `local_cutoff` are skipped or clipped to the cutoff).
+  - **Result:** words never jump between lines mid-word as they type out, zero re-shaping occurs per typewriter tick, and multi-colored spans render accurately right up to the reveal cursor.
 
 ### Hit-Testing & Clip Culling
 - During layout, materialize flat hit-target lists in control-local coordinates:
@@ -282,7 +288,7 @@ Mirrors `AuthenticationKit` and `PurchaseKit` while simplifying the native stack
 ```ini
 [configuration]
 entry_symbol = "gdmarkdown_entry_point"
-compatibility_minimum = "4.4"
+compatibility_minimum = "4.6"
 reloadable = true
 
 [libraries]
@@ -302,8 +308,8 @@ linux.arm64            = "res://addons/gdmarkdown/bin/linux_arm64/libgdmarkdown.
 ```
 
 ### Build Tasks (`Taskfile.yml`)
-- `task macos`: builds `macos.arm64` via SCons and wraps it into `addons/gdmarkdown/bin/macos_arm64/gdmarkdown.framework` (with `Info.plist` and `@rpath` install name).
-- `task ios`: builds iOS device (`arm64`) + iOS Simulator (`arm64`) via SCons, wraps each into a `.framework`, merges via `xcodebuild -create-xcframework`, and signs via `scripts/sign-ios-frameworks`.
+- `task macos`: builds `macos.arm64` dynamic library via SCons and wraps it into `addons/gdmarkdown/bin/macos_arm64/gdmarkdown.framework` (with `Info.plist` and `@rpath/gdmarkdown.framework/gdmarkdown` install name).
+- `task ios`: builds iOS device (`arm64`) + iOS Simulator (`arm64`) **dynamic** libraries (`ios_framework` / shared Mach-O dylibs with `@rpath/gdmarkdown.framework/gdmarkdown` install name, targeting Godot 4.6+ dynamic `.xcframework` loading) via SCons, wraps each into a `.framework` bundle with `Info.plist`, merges via `xcodebuild -create-xcframework`, and signs slices + wrapper via `scripts/sign-ios-frameworks`.
 - `task android`: auto-discovers NDK (`ANDROID_NDK_ROOT` / `ANDROID_NDK_HOME` / `$HOME/Library/Android/sdk/ndk/*`), builds `arm64`, `arm32`, and `x86_64` `.so` libraries via SCons.
 - `task linux`: builds `linux_x86_64` and `linux_arm64` `.so` libraries via SCons.
 - `task test:native`: compiles and runs `native/tests/test_native.cpp`.
