@@ -52,10 +52,12 @@ done
 
 command -v gpm >/dev/null 2>&1 || fail "gpm is not installed: brew install cafecito-games/tap/gpm"
 
-installed_version="$(gpm --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1)"
-[[ -n "${installed_version}" ]] || fail "could not read a version from 'gpm --version'"
-if [[ "$(printf '%s\n%s\n' "${MINIMUM_GPM_VERSION}" "${installed_version}" | sort -V | head -n 1)" != "${MINIMUM_GPM_VERSION}" ]]; then
-	fail "gpm ${MINIMUM_GPM_VERSION} or newer is required, found ${installed_version}"
+raw_gpm_version="$(gpm --version)"
+installed_version="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' <<<"${raw_gpm_version}" | head -n 1 || true)"
+if [[ -n "${installed_version}" ]]; then
+	if [[ "$(printf '%s\n%s\n' "${MINIMUM_GPM_VERSION}" "${installed_version}" | sort -V | head -n 1)" != "${MINIMUM_GPM_VERSION}" ]]; then
+		fail "gpm ${MINIMUM_GPM_VERSION} or newer is required, found ${installed_version}"
+	fi
 fi
 
 addon_source="${GDMARKDOWN_ADDON_SRC:-${repository_root}/addons/gdmarkdown}"

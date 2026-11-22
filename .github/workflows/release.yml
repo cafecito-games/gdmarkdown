@@ -299,7 +299,14 @@ jobs:
             -f pkcs12 -A -T /usr/bin/codesign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "${KEYCHAIN_PASSWORD}" "${keychain}" > /dev/null
-          security list-keychains -d user -s "${keychain}" $(security list-keychains -d user | tr -d '"')
+          existing_keychains=()
+          while IFS= read -r existing_keychain; do
+            existing_keychain="${existing_keychain#"${existing_keychain%%[![:space:]]*}"}"
+            existing_keychain="${existing_keychain%\"}"
+            existing_keychain="${existing_keychain#\"}"
+            [[ -n "${existing_keychain}" ]] && existing_keychains+=("${existing_keychain}")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "${keychain}" "${existing_keychains[@]}"
           rm -f "${certificate}"
           identity="$(security find-identity -v -p codesigning "${keychain}" \
             | awk '/Apple Distribution/ { print $2; exit }')"
