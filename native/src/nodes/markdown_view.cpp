@@ -28,6 +28,9 @@ MarkdownView::MarkdownView() {
 	// Use MOUSE_FILTER_PASS so ancestor ScrollContainers still receive wheel and
 	// drag events unless _gui_input() explicitly accepts a link/task/code interaction.
 	set_mouse_filter(MOUSE_FILTER_PASS);
+	// Required for NOTIFICATION_TRANSFORM_CHANGED, which is how an enclosing
+	// ScrollContainer's scrolling reaches this control.
+	set_notify_transform(true);
 }
 
 MarkdownView::~MarkdownView() {
@@ -37,6 +40,7 @@ MarkdownView::~MarkdownView() {
 			markdown_theme->disconnect("changed", callback);
 		}
 	}
+	_unbind_scroll_ancestor();
 	_free_clip_canvas_items();
 }
 
@@ -294,26 +298,88 @@ void MarkdownView::_update_cursor_for_position(const Vector2 &p_position) {
 	set_default_cursor_shape(pointer_target ? CURSOR_POINTING_HAND : CURSOR_ARROW);
 }
 
-// When nested inside a ScrollContainer, computes the visible vertical band in
-// local coordinates plus a 64 px overscan margin so _draw_document() can skip
-// off-screen primitives without popping during fast scrolls.
-bool MarkdownView::_compute_visible_y_band(float &r_min_y, float &r_max_y) const {
+// The nearest ScrollContainer above this control, which owns both the band the
+// drawing culls to and the scrolling that moves it.
+ScrollContainer *MarkdownView::_find_scroll_ancestor() const {
 	Node *ancestor = get_parent();
 	while (ancestor != nullptr) {
 		ScrollContainer *scroll_container = Object::cast_to<ScrollContainer>(ancestor);
 		if (scroll_container != nullptr) {
-			Vector2 viewport_size = scroll_container->get_size();
-			if (viewport_size.y <= 0.0f) {
-				return false;
-			}
-			float local_top_y = scroll_container->get_global_position().y - get_global_position().y;
-			r_min_y = local_top_y - 64.0f;
-			r_max_y = local_top_y + viewport_size.y + 64.0f;
-			return true;
+			return scroll_container;
 		}
 		ancestor = ancestor->get_parent();
 	}
-	return false;
+	return nullptr;
+}
+
+// Resizing the enclosing ScrollContainer vertically changes the band's height
+// without moving or resizing this control, so neither NOTIFICATION_RESIZED nor
+// NOTIFICATION_TRANSFORM_CHANGED reports it and the band below the old bottom
+// edge would stay unpainted.
+void MarkdownView::_bind_scroll_ancestor() {
+	ScrollContainer *scroll_container = _find_scroll_ancestor();
+	if (scroll_container == nullptr) {
+		return;
+	}
+	Callable callback = callable_mp(this, &MarkdownView::_redraw_if_visible_band_moved);
+	if (!scroll_container->is_connected("resized", callback)) {
+		scroll_container->connect("resized", callback);
+	}
+	bound_scroll_ancestor_id = scroll_container->get_instance_id();
+}
+
+void MarkdownView::_unbind_scroll_ancestor() {
+	if (bound_scroll_ancestor_id.is_null()) {
+		return;
+	}
+	ScrollContainer *scroll_container = Object::cast_to<ScrollContainer>(ObjectDB::get_instance(bound_scroll_ancestor_id));
+	bound_scroll_ancestor_id = ObjectID();
+	if (scroll_container == nullptr) {
+		return;
+	}
+	Callable callback = callable_mp(this, &MarkdownView::_redraw_if_visible_band_moved);
+	if (scroll_container->is_connected("resized", callback)) {
+		scroll_container->disconnect("resized", callback);
+	}
+}
+
+// When nested inside a ScrollContainer, computes the visible vertical band in
+// local coordinates plus a 64 px overscan margin so _draw_document() can skip
+// off-screen primitives without popping during fast scrolls.
+bool MarkdownView::_compute_visible_y_band(float &r_min_y, float &r_max_y) const {
+	ScrollContainer *scroll_container = _find_scroll_ancestor();
+	if (scroll_container == nullptr) {
+		return false;
+	}
+	Vector2 viewport_size = scroll_container->get_size();
+	if (viewport_size.y <= 0.0f) {
+		return false;
+	}
+	float local_top_y = scroll_container->get_global_position().y - get_global_position().y;
+	r_min_y = local_top_y - 64.0f;
+	r_max_y = local_top_y + viewport_size.y + 64.0f;
+	return true;
+}
+
+// A ScrollContainer scrolls by moving this control, which changes which band
+// _compute_visible_y_band() resolves but not the primitives already painted into
+// the canvas item. Without this the view keeps showing the band that was visible
+// when it last drew, so scrolling a document taller than the viewport reveals
+// blank space instead of the rest of it. Comparing against the band the last
+// draw actually painted keeps a scroll that stays inside it from redrawing.
+void MarkdownView::_redraw_if_visible_band_moved() {
+	float visible_min_y = 0.0f;
+	float visible_max_y = 0.0f;
+	if (!_compute_visible_y_band(visible_min_y, visible_max_y)) {
+		if (last_draw_was_culled) {
+			queue_redraw();
+		}
+		return;
+	}
+	bool band_moved = std::abs(visible_min_y - last_drawn_band_min_y) > 0.5f || std::abs(visible_max_y - last_drawn_band_max_y) > 0.5f;
+	if (!last_draw_was_culled || band_moved) {
+		queue_redraw();
+	}
 }
 
 void MarkdownView::_draw_document() {
@@ -342,6 +408,9 @@ void MarkdownView::_draw_document() {
 	float visible_min_y = 0.0f;
 	float visible_max_y = 0.0f;
 	bool cull_vertical = _compute_visible_y_band(visible_min_y, visible_max_y);
+	last_draw_was_culled = cull_vertical;
+	last_drawn_band_min_y = visible_min_y;
+	last_drawn_band_max_y = visible_max_y;
 
 	Ref<MarkdownTheme> theme = _active_theme();
 
@@ -574,6 +643,7 @@ void MarkdownView::_notification(int p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			_ensure_layout();
 			_sync_clip_canvas_items();
+			_bind_scroll_ancestor();
 			queue_redraw();
 			break;
 		}
@@ -586,6 +656,11 @@ void MarkdownView::_notification(int p_what) {
 				layout_dirty = true;
 				_ensure_layout();
 			}
+			_redraw_if_visible_band_moved();
+			break;
+		}
+		case NOTIFICATION_TRANSFORM_CHANGED: {
+			_redraw_if_visible_band_moved();
 			break;
 		}
 		case NOTIFICATION_THEME_CHANGED: {
@@ -604,6 +679,7 @@ void MarkdownView::_notification(int p_what) {
 			break;
 		}
 		case NOTIFICATION_EXIT_TREE: {
+			_unbind_scroll_ancestor();
 			_free_clip_canvas_items();
 			break;
 		}

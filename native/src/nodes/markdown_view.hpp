@@ -9,7 +9,10 @@
 
 #include <godot_cpp/classes/control.hpp>
 #include <godot_cpp/classes/input_event.hpp>
+#include <godot_cpp/classes/scroll_container.hpp>
 #include <godot_cpp/classes/texture2d.hpp>
+#include <godot_cpp/core/object.hpp>
+#include <godot_cpp/core/object_id.hpp>
 #include <godot_cpp/templates/hash_map.hpp>
 #include <godot_cpp/variant/callable.hpp>
 #include <godot_cpp/variant/string.hpp>
@@ -43,6 +46,10 @@ private:
 	gdmarkdown::LayoutDocument layout;
 	bool layout_dirty = true;
 	float last_layout_width = -1.0f;
+	float last_drawn_band_min_y = 0.0f;
+	float last_drawn_band_max_y = 0.0f;
+	bool last_draw_was_culled = false;
+	ObjectID bound_scroll_ancestor_id;
 
 	String hovered_link_url;
 	int dragging_code_scroll_index = -1;
@@ -64,7 +71,11 @@ private:
 	String _find_link_at(const Vector2 &p_position) const;
 	int _find_code_scroll_at(const Vector2 &p_position) const;
 	void _update_cursor_for_position(const Vector2 &p_position);
+	ScrollContainer *_find_scroll_ancestor() const;
+	void _bind_scroll_ancestor();
+	void _unbind_scroll_ancestor();
 	bool _compute_visible_y_band(float &r_min_y, float &r_max_y) const;
+	void _redraw_if_visible_band_moved();
 	void _draw_document();
 
 protected:

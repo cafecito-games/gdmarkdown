@@ -563,6 +563,68 @@ func _mount_view(width: float) -> MarkdownView:
 	return view
 
 
+## A document taller than its [ScrollContainer] is drawn one visible band at a
+## time, so the band the last draw painted stops being the visible one as soon
+## as the container scrolls. Verifies the view notices and repaints; without it
+## scrolling reveals blank space where the rest of the document should be.
+func test_scrolling_repaints_the_culled_visible_band() -> void:
+	var paragraphs: PackedStringArray = PackedStringArray()
+	for index: int in range(80):
+		var appended: int = paragraphs.append("Paragraph %d of a long scrolled document." % index)
+		expect_equal(appended, OK)
+	var scroll: ScrollContainer = _mount_scrolled_view(120.0, "\n\n".join(paragraphs))
+	await sleep()
+
+	var view: MarkdownView = scroll.get_child(0)
+	var scroll_bar: VScrollBar = scroll.get_v_scroll_bar()
+	var max_scroll: float = maxf(0.0, scroll_bar.max_value - scroll_bar.page)
+	expect_true(max_scroll > 0.0)
+
+	var redraws: Array[int] = [0]
+	var connected: int = view.draw.connect(func() -> void: redraws[0] += 1)
+	expect_equal(connected, OK)
+	await sleep()
+	redraws[0] = 0
+
+	scroll_bar.value = max_scroll
+	await sleep()
+	expect_true(redraws[0] > 0)
+
+
+## Scrolling within the band the last draw already painted needs no repaint, so
+## the band comparison must not turn every scroll step into a redraw.
+func test_scrolling_inside_the_painted_band_does_not_repaint() -> void:
+	var scroll: ScrollContainer = _mount_scrolled_view(120.0, "Short enough to fit the band.")
+	await sleep()
+
+	var view: MarkdownView = scroll.get_child(0)
+	var redraws: Array[int] = [0]
+	var connected: int = view.draw.connect(func() -> void: redraws[0] += 1)
+	expect_equal(connected, OK)
+	await sleep()
+	redraws[0] = 0
+
+	scroll.get_v_scroll_bar().value = 0.0
+	await sleep()
+	expect_equal(redraws[0], 0)
+
+
+## Builds a [MarkdownView] inside a [ScrollContainer] shorter than the document,
+## which is the arrangement that makes the view cull primitives to the visible
+## band. Returns the scroll container so a case can scroll it.
+func _mount_scrolled_view(viewport_height: float, markdown_source: String) -> ScrollContainer:
+	var scroll: ScrollContainer = autofree(ScrollContainer.new())
+	scroll.position = Vector2.ZERO
+	scroll.size = Vector2(400.0, viewport_height)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var view: MarkdownView = MarkdownView.new()
+	view.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	view.markdown = markdown_source
+	scroll.add_child(view)
+	get_tree().root.add_child(scroll)
+	return scroll
+
+
 ## Generates a solid-color RGBA8 [ImageTexture] for image-resolver test cases.
 func _make_solid_texture(width: int, height: int, color: Color) -> ImageTexture:
 	var image: Image = Image.create(width, height, false, Image.FORMAT_RGBA8)
