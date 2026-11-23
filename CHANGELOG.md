@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `MarkdownView` now repaints when scrolling moves the visible band it culls to.
+  A document taller than its `ScrollContainer` is drawn one band at a time, but
+  the band was recomputed only while drawing and nothing redrew when the
+  container scrolled, so the view kept showing the band that was visible when it
+  last drew and the rest of a long document appeared blank. The view now watches
+  its own transform and its scroll ancestor's size, and redraws when the band
+  actually moves.
+
 ## [0.2.0] - 2026-11-22
 
 ### Changed
