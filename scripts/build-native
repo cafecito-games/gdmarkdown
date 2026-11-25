@@ -249,6 +249,74 @@ discover_android_ndk() {
 	return 1
 }
 
+verify_android_elf_alignment() {
+	local library_path="$1"
+	local minimum_alignment="${2:-16384}"
+	require_command python3 "required to verify Android ELF LOAD-segment alignment"
+
+	python3 - "${library_path}" "${minimum_alignment}" <<'PY'
+import struct
+import sys
+
+library_path = sys.argv[1]
+minimum_alignment = int(sys.argv[2])
+
+with open(library_path, "rb") as handle:
+    data = handle.read()
+
+if len(data) < 64 or data[:4] != b"\x7fELF":
+    sys.exit(f"FAIL: {library_path} is not a valid ELF file")
+
+elf_class = data[4]
+elf_endian = data[5]
+if elf_class != 2:
+    sys.exit(f"FAIL: {library_path} is not ELF64 (EI_CLASS={elf_class})")
+if elf_endian == 1:
+    endian = "<"
+elif elf_endian == 2:
+    endian = ">"
+else:
+    sys.exit(f"FAIL: {library_path} has unsupported endianness (EI_DATA={elf_endian})")
+
+program_header_offset = struct.unpack_from(endian + "Q", data, 32)[0]
+program_header_entry_size, program_header_count = struct.unpack_from(endian + "HH", data, 54)
+if program_header_entry_size < 56 or program_header_count == 0 or program_header_count == 0xFFFF:
+    sys.exit(
+        f"FAIL: {library_path} has unexpected program header table "
+        f"(e_phentsize={program_header_entry_size}, e_phnum={program_header_count})"
+    )
+
+table_end = program_header_offset + program_header_entry_size * program_header_count
+if table_end > len(data):
+    sys.exit(f"FAIL: {library_path} program header table extends past EOF")
+
+load_segments = 0
+failures = []
+for index in range(program_header_count):
+    entry_offset = program_header_offset + index * program_header_entry_size
+    segment_type, _flags, offset, virtual_address, _physical_address, _file_size, _memory_size, alignment = (
+        struct.unpack_from(endian + "IIQQQQQQ", data, entry_offset)
+    )
+    if segment_type != 1:  # PT_LOAD
+        continue
+    load_segments += 1
+    if alignment < minimum_alignment or (alignment % minimum_alignment) != 0:
+        failures.append(
+            f"  PT_LOAD[{index}] offset=0x{offset:x} vaddr=0x{virtual_address:x} p_align={alignment} "
+            f"(expected multiple of {minimum_alignment})"
+        )
+
+if load_segments == 0:
+    sys.exit(f"FAIL: {library_path} contains no PT_LOAD segments")
+
+if failures:
+    sys.exit(
+        f"FAIL: {library_path} failed {minimum_alignment}-byte ELF alignment check:\n"
+        + "\n".join(failures)
+    )
+PY
+}
+
 build_android() {
 	require_command scons "install via pipx/pip/brew install scons"
 
@@ -286,6 +354,9 @@ build_android() {
 
 		local destination_library="${output_directory}/libgdmarkdown.android.release.${architecture}.so"
 		cp "${source_library}" "${destination_library}"
+		if [[ "${architecture}" == "arm64" || "${architecture}" == "x86_64" ]]; then
+			verify_android_elf_alignment "${destination_library}" 16384
+		fi
 		echo "Built Android (${architecture}) library at ${destination_library}"
 	done
 }

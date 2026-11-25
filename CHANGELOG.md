@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- 64-bit Android native libraries (`arm64` and `x86_64`) are now linked with
+  `-Wl,-z,max-page-size=16384` and verified at build time so every ELF
+  `PT_LOAD` segment has at least 16 KB alignment, satisfying Android's 16 KB
+  page-size requirement.
+
 ## [0.2.1] - 2026-11-23
 
 ### Fixed
