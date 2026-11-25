@@ -953,8 +953,14 @@ private:
 						checkbox.document_char_threshold = item_threshold;
 						result.primitives.push_back(checkbox);
 
+						// Use the whole marker gutter. Share the gap with the
+						// neighboring row so adjacent checkbox targets stay distinct.
+						float tap_padding = std::clamp(item_gap * 0.5f, 0.0f, 4.0f);
+						float tap_top = std::max(start_y, item_start_y - tap_padding);
 						TaskHitBox hit_box;
-						hit_box.rectangle = Rect2(box_x - 4.0f, box_y - 4.0f, box_size + 8.0f, box_size + 8.0f);
+						hit_box.rectangle = Rect2(
+								origin_x, tap_top, std::max(indent, box_size),
+								item_start_y + first_line_height + tap_padding - tap_top);
 						hit_box.task_index = item.task_index;
 						result.task_hit_boxes.push_back(hit_box);
 					} else {

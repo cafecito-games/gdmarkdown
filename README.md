@@ -216,7 +216,7 @@ code wrapping, scrub typewriter reveal, and edit Markdown live.
 
 **Signals**
 
-- `link_clicked(url: String)` — emitted on left-click over a link fragment.
+- `link_clicked(url: String)` — emitted when a click or tap is released over its link target.
 - `link_hovered(url: String)` — emitted when entering a link, or with `""` on leave / `NOTIFICATION_MOUSE_EXIT`.
 - `task_toggled(task_index: int, checked: bool)` — emitted when an interactive task checkbox is toggled by user input.
 - `layout_updated()` — emitted after layout finishes rebuilding.
@@ -263,7 +263,26 @@ code wrapping, scrub typewriter reveal, and edit Markdown live.
 - **Properties:** `title`, `accent_color`, `title_color` *(falls back to `accent_color` when alpha is `0`)*, `icon` *(procedural vector icon drawn when `null`)*, `panel_style` *(tinted rounded panel with left accent bar drawn when `null`)*
 - **Methods:** `MarkdownCalloutStyle.create(title, accent_color, title_color = Color(0, 0, 0, 0), icon = null, panel_style = null)`, `resolve_title_color() -> Color`
 
+## Touch input
+
+On Android and iOS, keep Godot's `input_devices/pointing/emulate_mouse_from_touch`
+enabled so taps and touch scrolling reach `MarkdownView` and its parent
+`ScrollContainer`. Set the container's `scroll_deadzone` to a small positive
+value to tolerate finger jitter. The demo uses 8. Links and interactive tasks
+activate on release. In unwrapped code blocks, a horizontal swipe scrolls the
+code and a vertical swipe scrolls the page.
+Size the scroll container within your game's safe-area layout so document
+content clears system bars and display cutouts.
+
+To check a mobile export, use the demo's **RPG Quest Log** to tap a checkbox and
+then swipe starting on it. The tap should toggle the task and the swipe should
+scroll. Repeat over a link, then turn off code wrapping in **Live Playground**
+and swipe in both directions from a long code line. Check a table at portrait
+width and verify reflow in a project that allows rotation.
+
 ## What is supported
+
+See the [Markdown syntax guide](docs/markdown.md) for examples.
 
 CommonMark + GitHub Flavored Markdown parsed by vendored `md4c` v0.6.0:
 
