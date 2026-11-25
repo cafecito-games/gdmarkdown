@@ -26,6 +26,10 @@ target = env["target"]
 
 if platform in ("macos", "ios"):
     env.Append(LINKFLAGS=["-Wl,-install_name,@rpath/gdmarkdown.framework/gdmarkdown"])
+elif platform == "android" and arch in ("arm64", "x86_64"):
+    # Enforce 16 KB ELF LOAD-segment alignment on 64-bit Android ABIs so binaries
+    # satisfy Android's 16 KB page-size requirement across all NDK versions.
+    env.Append(LINKFLAGS=["-Wl,-z,max-page-size=16384"])
 
 cpp_sources = [
     "src/register_types.cpp",
