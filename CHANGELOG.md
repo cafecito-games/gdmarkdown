@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Links and interactive tasks activate on release so touch scrolling can start
+  on interactive content. Unwrapped code blocks wait for a horizontal drag
+  before taking over the gesture.
+- Task checkboxes use the list gutter as a tap target.
+
 ## [0.2.2] - 2026-11-25
 
 ### Fixed

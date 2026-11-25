@@ -52,8 +52,11 @@ private:
 	ObjectID bound_scroll_ancestor_id;
 
 	String hovered_link_url;
-	int dragging_code_scroll_index = -1;
-	float drag_start_x = 0.0f;
+	int pressed_task_index = -1;
+	String pressed_link_url;
+	int pressed_code_scroll_index = -1;
+	bool dragging_code = false;
+	Vector2 press_position;
 	float drag_start_scroll_x = 0.0f;
 
 	HashMap<String, Ref<Texture2D>> image_cache;
@@ -70,6 +73,7 @@ private:
 	int _find_task_at(const Vector2 &p_position) const;
 	String _find_link_at(const Vector2 &p_position) const;
 	int _find_code_scroll_at(const Vector2 &p_position) const;
+	void _clear_pointer_press();
 	void _update_cursor_for_position(const Vector2 &p_position);
 	ScrollContainer *_find_scroll_ancestor() const;
 	void _bind_scroll_ancestor();

@@ -198,7 +198,7 @@ void MarkdownView::_ensure_layout() {
 	}
 
 	_free_clip_canvas_items();
-	dragging_code_scroll_index = -1;
+	_clear_pointer_press();
 
 	Ref<Font> fallback_font = get_theme_default_font();
 	if (fallback_font.is_null()) {
@@ -246,7 +246,7 @@ void MarkdownView::_rebuild_document() {
 	document = gdmarkdown::parse_markdown(source_view);
 	task_states = document.initial_task_states;
 	_set_hovered_link(String());
-	dragging_code_scroll_index = -1;
+	_clear_pointer_press();
 	_mark_layout_dirty();
 }
 
@@ -288,6 +288,13 @@ int MarkdownView::_find_code_scroll_at(const Vector2 &p_position) const {
 		}
 	}
 	return -1;
+}
+
+void MarkdownView::_clear_pointer_press() {
+	pressed_task_index = -1;
+	pressed_link_url = String();
+	pressed_code_scroll_index = -1;
+	dragging_code = false;
 }
 
 void MarkdownView::_update_cursor_for_position(const Vector2 &p_position) {
@@ -675,10 +682,15 @@ void MarkdownView::_notification(int p_what) {
 		case NOTIFICATION_MOUSE_EXIT: {
 			_set_hovered_link(String());
 			set_default_cursor_shape(CURSOR_ARROW);
-			dragging_code_scroll_index = -1;
+			_clear_pointer_press();
+			break;
+		}
+		case NOTIFICATION_SCROLL_BEGIN: {
+			_clear_pointer_press();
 			break;
 		}
 		case NOTIFICATION_EXIT_TREE: {
+			_clear_pointer_press();
 			_unbind_scroll_ancestor();
 			_free_clip_canvas_items();
 			break;
@@ -694,31 +706,50 @@ Vector2 MarkdownView::_get_minimum_size() const {
 	return Vector2(0.0f, layout.total_height);
 }
 
-// Input priority: active code-scroll drag > interactive task checkbox > link
-// click > code-scroll drag start / horizontal wheel / trackpad pan gesture.
-// Unhandled events propagate untouched to enclosing ScrollContainers.
+// Let ScrollContainer see the emulated press and release that bracket touch
+// scrolling. Claim motion only once a drag inside an overflow block goes horizontal.
 void MarkdownView::_gui_input(const Ref<InputEvent> &p_event) {
 	if (p_event.is_null()) {
 		return;
 	}
 
+	constexpr float drag_threshold = 8.0f;
 	Ref<InputEventMouseMotion> mouse_motion = p_event;
 	if (mouse_motion.is_valid()) {
 		Vector2 pointer_position = mouse_motion->get_position();
-		if (dragging_code_scroll_index >= 0 && static_cast<size_t>(dragging_code_scroll_index) < layout.code_scroll_regions.size()) {
-			gdmarkdown::CodeScrollRegion &region = layout.code_scroll_regions[static_cast<size_t>(dragging_code_scroll_index)];
-			float delta_x = pointer_position.x - drag_start_x;
-			float next_scroll_x = std::clamp(drag_start_scroll_x - delta_x, 0.0f, region.max_scroll_x);
-			if (std::abs(next_scroll_x - region.scroll_x) > 0.25f) {
-				region.scroll_x = next_scroll_x;
-				queue_redraw();
-			}
-			accept_event();
-			return;
+		Vector2 delta = get_global_transform_with_canvas().xform(pointer_position) - press_position;
+		bool moved = delta.length_squared() >= drag_threshold * drag_threshold;
+		if (moved) {
+			pressed_task_index = -1;
+			pressed_link_url = String();
 		}
 
-		_set_hovered_link(_find_link_at(pointer_position));
-		_update_cursor_for_position(pointer_position);
+		if (pressed_code_scroll_index >= 0) {
+			if (!moved && !dragging_code) {
+				// Keep small movements out of the parent while choosing a drag axis.
+				accept_event();
+				return;
+			}
+			if (dragging_code || std::abs(delta.x) > std::abs(delta.y)) {
+				dragging_code = true;
+				gdmarkdown::CodeScrollRegion &region = layout.code_scroll_regions[static_cast<size_t>(pressed_code_scroll_index)];
+				Vector2 local_start = get_global_transform_with_canvas().affine_inverse().xform(press_position);
+				float next_scroll_x = std::clamp(drag_start_scroll_x - (pointer_position.x - local_start.x),
+						0.0f, region.max_scroll_x);
+				if (std::abs(next_scroll_x - region.scroll_x) > 0.25f) {
+					region.scroll_x = next_scroll_x;
+					queue_redraw();
+				}
+				accept_event();
+				return;
+			}
+			pressed_code_scroll_index = -1;
+		}
+
+		if (mouse_motion->get_device() != InputEvent::DEVICE_ID_EMULATION) {
+			_set_hovered_link(_find_link_at(pointer_position));
+			_update_cursor_for_position(pointer_position);
+		}
 		return;
 	}
 
@@ -728,39 +759,42 @@ void MarkdownView::_gui_input(const Ref<InputEvent> &p_event) {
 		MouseButton button_index = mouse_button->get_button_index();
 
 		if (button_index == MOUSE_BUTTON_LEFT) {
+			Vector2 viewport_position = get_global_transform_with_canvas().xform(pointer_position);
 			if (mouse_button->is_pressed()) {
-				if (interactive_tasks) {
-					int task_index = _find_task_at(pointer_position);
-					if (task_index >= 0 && static_cast<size_t>(task_index) < task_states.size()) {
-						bool next_checked = !task_states[static_cast<size_t>(task_index)];
-						task_states[static_cast<size_t>(task_index)] = next_checked;
-						queue_redraw();
-						emit_signal("task_toggled", task_index, next_checked);
-						accept_event();
-						return;
+				_clear_pointer_press();
+				press_position = viewport_position;
+				pressed_task_index = interactive_tasks ? _find_task_at(pointer_position) : -1;
+				if (pressed_task_index < 0) {
+					pressed_link_url = _find_link_at(pointer_position);
+					if (pressed_link_url.is_empty()) {
+						pressed_code_scroll_index = _find_code_scroll_at(pointer_position);
+						if (pressed_code_scroll_index >= 0) {
+							drag_start_scroll_x = layout.code_scroll_regions[static_cast<size_t>(pressed_code_scroll_index)].scroll_x;
+						}
 					}
 				}
-
-				String link_url = _find_link_at(pointer_position);
-				if (!link_url.is_empty()) {
-					emit_signal("link_clicked", link_url);
-					accept_event();
-					return;
-				}
-
-				int code_region_index = _find_code_scroll_at(pointer_position);
-				if (code_region_index >= 0) {
-					dragging_code_scroll_index = code_region_index;
-					drag_start_x = pointer_position.x;
-					drag_start_scroll_x = layout.code_scroll_regions[static_cast<size_t>(code_region_index)].scroll_x;
-					accept_event();
-					return;
-				}
-			} else if (dragging_code_scroll_index >= 0) {
-				dragging_code_scroll_index = -1;
-				accept_event();
 				return;
 			}
+
+			bool is_tap = !mouse_button->is_canceled() &&
+					viewport_position.distance_squared_to(press_position) < drag_threshold * drag_threshold;
+			int task_index = pressed_task_index;
+			String link_url = pressed_link_url;
+			bool handled = dragging_code;
+			_clear_pointer_press();
+			if (is_tap && interactive_tasks && task_index >= 0 && task_index == _find_task_at(pointer_position)) {
+				bool checked = !task_states[static_cast<size_t>(task_index)];
+				set_task_checked(task_index, checked);
+				emit_signal("task_toggled", task_index, checked);
+				handled = true;
+			} else if (is_tap && !link_url.is_empty() && link_url == _find_link_at(pointer_position)) {
+				emit_signal("link_clicked", link_url);
+				handled = true;
+			}
+			if (handled && mouse_button->get_device() != InputEvent::DEVICE_ID_EMULATION) {
+				accept_event();
+			}
+			return;
 		}
 
 		if (mouse_button->is_pressed()) {

@@ -261,6 +261,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
+scroll_deadzone = 8
 
 [node name="Preview" type="MarkdownView" parent="Margin/Layout/BodySplit/WorkspaceSplit/PreviewPanel/PreviewMargin/PreviewScroll"]
 unique_name_in_owner = true
